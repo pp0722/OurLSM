@@ -1,6 +1,11 @@
 #ifndef BITCOIN_CONTRACT_OURCONTRACT_H
 #define BITCOIN_CONTRACT_OURCONTRACT_H
 
+#define BYTE_READ_STATE 0
+#define BYTE_SEND_TO_ADDRESS -1
+#define BYTE_SEND_TO_CONTRACT -2
+#define BYTE_CALL_CONTRACT -3
+
 /* non-reentrant entry point of runtime */
 int start_runtime(int argc, char **argv);
 
@@ -27,5 +32,11 @@ int state_read(void *buf, int count);
 
 /* write the state file of the calling contract */
 int state_write(const void *buf, int count);
+
+/* send some money to the target address */
+int send_money(const char *addr, long long amount);
+
+/* send some money to the target contract */
+int send_money_to_contract(const char *addr, long long amount);
 
 #endif // BITCOIN_CONTRACT_OURCONTRACT_H

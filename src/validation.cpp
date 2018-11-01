@@ -1176,6 +1176,35 @@ void static InvalidBlockFound(CBlockIndex *pindex, const CValidationState &state
     }
 }
 
+CTransactionRef ProcessContractTx(const Contract &cont, CCoinsViewCache& inputs,
+                                  std::vector<Contract> &nextContract)
+{
+    if (cont.action==0) return CTransactionRef();
+    CMutableTransaction mtx;
+    ContState cs;
+    CAmount balance = 0;
+    inputs.GetContState(cont.address,cs);
+    for (const COutPoint &outpoint : cs.coins)
+    {
+        mtx.vin.push_back(CTxIn(outpoint));
+        balance += inputs.AccessCoin(outpoint).out.nValue;
+    }
+
+    if (!ProcessContract(cont,mtx.vout,cs.state,balance,nextContract)) return CTransactionRef();
+    // update cont state
+    cs.coins.clear();
+    inputs.AddContState(cont.address,std::move(cs));
+    if(mtx.vin.size() == 0) return CTransactionRef();
+    // add the change
+    CAmount amount = 0;
+    for (const CTxOut &txout : mtx.vout)
+        amount += txout.nValue;
+    assert(amount<=balance);
+    if(amount<balance)
+        mtx.vout.push_back(CTxOut(balance-amount, GetScriptForContract(cont.address)));
+    return MakeTransactionRef(mtx);
+}
+
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
     // mark inputs spent
@@ -1743,9 +1772,10 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
     CDiskTxPos pos(pindex->GetBlockPos(), GetSizeOfCompactSize(block.vtx.size()));
     std::vector<std::pair<uint256, CDiskTxPos> > vPos;
     vPos.reserve(block.vtx.size());
-    blockundo.vtxundo.reserve(block.vtx.size() - 1);
+    blockundo.vtxundo.reserve((block.vtx.size() - 1) * 2);
     std::vector<PrecomputedTransactionData> txdata;
     txdata.reserve(block.vtx.size()); // Required so that pointers to individual PrecomputedTransactionData don't get invalidated
+    block.vvtx.clear(); // reset
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         const CTransaction &tx = *(block.vtx[i]);
@@ -1800,6 +1830,25 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
         }
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
 
+        std::queue<Contract> contractQueue;
+        if (tx.contract.action != ACTION_NONE)
+            contractQueue.push(tx.contract);
+        while (!contractQueue.empty()) {
+            Contract cur = std::move(contractQueue.front());
+            contractQueue.pop();
+
+            std::vector<Contract> contractCall;
+            CTransactionRef ptx = ProcessContractTx(cur, view, contractCall);
+            if (ptx) {
+                block.vvtx.push_back(ptx);
+                blockundo.vtxundo.push_back(CTxUndo());
+                UpdateCoins(*ptx, view, blockundo.vtxundo.back(), pindex->nHeight);
+                for (Contract &nextContract: contractCall) {
+                    contractQueue.push(std::move(nextContract));
+                }
+            }
+        }
+
         vPos.push_back(std::make_pair(tx.GetHash(), pos));
         pos.nTxOffset += ::GetSerializeSize(tx, SER_DISK, CLIENT_VERSION);
     }
@@ -1820,13 +1869,6 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
 
     if (fJustCheck)
         return true;
-
-    // Apply changes of contract state on disk by running contracts
-    for (const auto& tx : block.vtx) {
-        if (ProcessContract(tx->GetHash().ToString(), tx->contract) == false) {
-            /* TODO: perform contract state recovery */
-        }
-    }
 
     // Write undo information to disk
     if (pindex->GetUndoPos().IsNull() || !pindex->IsValid(BLOCK_VALID_SCRIPTS))

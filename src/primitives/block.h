@@ -79,6 +79,9 @@ public:
     std::vector<CTransactionRef> vtx;
 
     // memory only
+    mutable std::vector<CTransactionRef> vvtx;
+
+    // memory only
     mutable bool fChecked;
 
     CBlock()

@@ -497,6 +497,82 @@ UniValue sendtoaddress(const JSONRPCRequest& request)
     return wtx.GetHash().GetHex();
 }
 
+UniValue sendtocontract(const JSONRPCRequest& request)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
+    }
+
+    if (request.fHelp || request.params.size() < 2 || request.params.size() > 8)
+        throw std::runtime_error(
+            "sendtocontract \"ctid\" amount ( \"comment\" \"comment_to\" subtractfeefromamount replaceable conf_target \"estimate_mode\")\n"
+            "\nSend an amount to a given ctid.\n"
+            + HelpRequiringPassphrase(pwallet) +
+            "\nArguments:\n"
+            "1. \"ctid\"               (string, required) The contract id to send to.\n"
+            "2. \"amount\"             (numeric or string, required) The amount in " + CURRENCY_UNIT + " to send. eg 0.1\n"
+            "3. \"comment\"            (string, optional) A comment used to store what the transaction is for. \n"
+            "                             This is not part of the transaction, just kept in your wallet.\n"
+            "4. \"comment_to\"         (string, optional) A comment to store the name of the person or organization \n"
+            "                             to which you're sending the transaction. This is not part of the \n"
+            "                             transaction, just kept in your wallet.\n"
+            "5. subtractfeefromamount  (boolean, optional, default=false) The fee will be deducted from the amount being sent.\n"
+            "                             The recipient will receive less bitcoins than you enter in the amount field.\n"
+            "6. replaceable            (boolean, optional) Allow this transaction to be replaced by a transaction with higher fees via BIP 125\n"
+            "7. conf_target            (numeric, optional) Confirmation target (in blocks)\n"
+            "8. \"estimate_mode\"      (string, optional, default=UNSET) The fee estimate mode, must be one of:\n"
+            "       \"UNSET\"\n"
+            "       \"ECONOMICAL\"\n"
+            "       \"CONSERVATIVE\"\n"
+            "\nResult:\n"
+            "\"txid\"                  (string) The transaction id.\n"
+        );
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    CContID ctid(uint256S(request.params[0].get_str()));
+
+    // Amount
+    CAmount nAmount = AmountFromValue(request.params[1]);
+    if (nAmount <= 0)
+        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid amount for send");
+
+    // Wallet comments
+    CWalletTx wtx;
+    if (request.params.size() > 2 && !request.params[2].isNull() && !request.params[2].get_str().empty())
+        wtx.mapValue["comment"] = request.params[2].get_str();
+    if (request.params.size() > 3 && !request.params[3].isNull() && !request.params[3].get_str().empty())
+        wtx.mapValue["to"]      = request.params[3].get_str();
+
+    bool fSubtractFeeFromAmount = false;
+    if (request.params.size() > 4 && !request.params[4].isNull()) {
+        fSubtractFeeFromAmount = request.params[4].get_bool();
+    }
+
+    CCoinControl coin_control;
+    if (request.params.size() > 5 && !request.params[5].isNull()) {
+        coin_control.signalRbf = request.params[5].get_bool();
+    }
+
+    if (request.params.size() > 6 && !request.params[6].isNull()) {
+        coin_control.m_confirm_target = ParseConfirmTarget(request.params[6]);
+    }
+
+    if (request.params.size() > 7 && !request.params[7].isNull()) {
+        if (!FeeModeFromString(request.params[7].get_str(), coin_control.m_fee_mode)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid estimate_mode parameter");
+        }
+    }
+
+
+    EnsureWalletIsUnlocked(pwallet);
+
+    SendMoney(pwallet, ctid, nAmount, fSubtractFeeFromAmount, wtx, coin_control);
+
+    return wtx.GetHash().GetHex();
+}
+
 UniValue listaddressgroupings(const JSONRPCRequest& request)
 {
     CWallet * const pwallet = GetWalletForJSONRPCRequest(request);
@@ -1172,6 +1248,8 @@ public:
         }
         return false;
     }
+
+    bool operator()(const CContID &contID) { return false; }
 };
 
 UniValue addwitnessaddress(const JSONRPCRequest& request)
@@ -1971,12 +2049,14 @@ UniValue gettransaction(const JSONRPCRequest& request)
 
     if (wtx.tx->contract.action == contract_action::ACTION_NEW) {
         entry.push_back(Pair("contract_action", "ACTION_NEW"));
-        entry.push_back(Pair("contract_code_size", wtx.tx->contract.code.size()));
-        entry.push_back(Pair("contract_args_size", wtx.tx->contract.args.size()));
+        entry.push_back(Pair("contract_address", wtx.tx->contract.address.GetHex()));
+        entry.push_back(Pair("contract_code_size", (uint64_t)(wtx.tx->contract.code.size())));
+        entry.push_back(Pair("contract_args_size", (uint64_t)(wtx.tx->contract.args.size())));
     } else if (wtx.tx->contract.action == contract_action::ACTION_CALL) {
         entry.push_back(Pair("contract_action", "ACTION_CALL"));
-        entry.push_back(Pair("contract_callee", wtx.tx->contract.callee.ToString()));
-        entry.push_back(Pair("contract_args_size", wtx.tx->contract.args.size()));
+        entry.push_back(Pair("contract_callee", wtx.tx->contract.address.GetHex()));
+        entry.push_back(Pair("contract_args_size", (uint64_t)(wtx.tx->contract.args.size())));
+
     }
 
     entry.push_back(Pair("amount", ValueFromAmount(nNet - nFee)));
@@ -3160,9 +3240,9 @@ static void SendContractTx(CWallet * const pwallet, const Contract *contract, co
     std::string strError;
     std::vector<CRecipient> vecSend;
     int nChangePosRet = -1;
-    CRecipient recipient = {scriptPubKey, curBalance, true};
+    CRecipient recipient = {scriptPubKey, 0, false};
     vecSend.push_back(recipient);
-    if (!pwallet->CreateTransaction(vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError, coin_control, true, contract)) {
+    if (!pwallet->CreateTransaction(vecSend, wtxNew, reservekey, nFeeRequired, nChangePosRet, strError, coin_control, true, contract, true)) {
         throw JSONRPCError(RPC_WALLET_ERROR, strError);
     }
     CValidationState state;
@@ -3216,6 +3296,7 @@ UniValue deploycontract(const JSONRPCRequest& request)
         for (unsigned i = 1; i < request.params.size(); i++)
             contract.args.push_back(request.params[i].get_str());
     }
+    contract.address = uint256();
 
     // getnewaddress
     if (!pwallet->IsLocked())
@@ -3241,7 +3322,10 @@ UniValue deploycontract(const JSONRPCRequest& request)
     CCoinControl no_coin_control;
     SendContractTx(pwallet, &contract, address.Get(), wtx, no_coin_control);
 
-    return wtx.GetHash().GetHex();
+    UniValue obj(UniValue::VOBJ);
+    obj.push_back(Pair("txid", wtx.GetHash().GetHex()));
+    obj.push_back(Pair("contract address", wtx.tx->contract.address.GetHex()));
+    return obj;
 }
 
 UniValue callcontract(const JSONRPCRequest& request)
@@ -3269,7 +3353,7 @@ UniValue callcontract(const JSONRPCRequest& request)
     // Contract fields
     Contract contract;
     contract.action = contract_action::ACTION_CALL;
-    contract.callee.SetHex(request.params[0].get_str());
+    contract.address = uint256S(request.params[0].get_str());
     if (request.params.size() > 1) {
         for (unsigned i = 1; i < request.params.size(); i++)
             contract.args.push_back(request.params[i].get_str());
@@ -3380,6 +3464,7 @@ static const CRPCCommand commands[] =
     { "wallet",             "sendfrom",                 &sendfrom,                 false,  {"fromaccount","toaddress","amount","minconf","comment","comment_to"} },
     { "wallet",             "sendmany",                 &sendmany,                 false,  {"fromaccount","amounts","minconf","comment","subtractfeefrom","replaceable","conf_target","estimate_mode"} },
     { "wallet",             "sendtoaddress",            &sendtoaddress,            false,  {"address","amount","comment","comment_to","subtractfeefromamount","replaceable","conf_target","estimate_mode"} },
+    { "wallet",             "sendtocontract",           &sendtocontract,           false,  {"ctid","amount","comment","comment_to","subtractfeefromamount","replaceable","conf_target","estimate_mode"} },
     { "wallet",             "setaccount",               &setaccount,               true,   {"address","account"} },
     { "wallet",             "settxfee",                 &settxfee,                 true,   {"amount"} },
     { "wallet",             "signmessage",              &signmessage,              true,   {"address","message"} },

@@ -15,9 +15,11 @@
 #include "chainparamsseeds.h"
 
 // Mine the genesis block if the structure of the block chain is modified.
+#ifndef FORCE_MINE_GENESIS
 #undef MINE_MAIN_GENESIS
 #undef MINE_TESTNET_GENESIS
 #undef MINE_REGTEST_GENESIS
+#endif
 
 #if defined(MINE_MAIN_GENESIS) || defined(MINE_TESTNET_GENESIS) || defined(MINE_REGTEST_GENESIS)
   #include <stdio.h>
@@ -369,9 +371,9 @@ public:
         }
 #endif
 
-        genesis = CreateGenesisBlock(1506274737, 4, 0x207fffff, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1536399020, 0, 0x207fffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x5452f75ec78aaa35f465e35d974339b6977b0d3e2344011a4057767b7e0f12aa"));
+        assert(consensus.hashGenesisBlock == uint256S("0x4756fd8ae5db78e1861081b095861b2c5a218c633ba7dc77fd2f756c55fdb9f1"));
         assert(genesis.hashMerkleRoot == uint256S("0xd9f2a49b88a6a667ec31635b1148378d656eab79ba1bd4736cfe51516464980f"));
 
         vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.

@@ -1,4 +1,4 @@
-OurCoin
+Ourcoin
 =======
 
 The goal of this project is to bring better performance and features to the blockchain technology.
@@ -10,7 +10,7 @@ Installation
 
 See [doc/build-unix.md](doc/build-unix.md).
 
-OurContract
+Ourcontract
 -----------
 
 See [doc/ourcontract.md](doc/ourcontract.md).

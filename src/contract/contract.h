@@ -20,7 +20,7 @@ class Contract
 public:
     uint8_t action;                 //!< ACTION_XXX
     std::string code;               //!< contract code if ACTION_NEW
-    uint256 callee;                 //!< called contract
+    uint256 address;            //!< contract address
     std::vector<std::string> args;  //!< passed arguments
 
     Contract()
@@ -28,7 +28,7 @@ public:
         SetNull();
     }
 
-    Contract(const Contract &contract) : action(contract.action), code(contract.code), callee(contract.callee), args(contract.args) {}
+    Contract(const Contract &contract) : action(contract.action), code(contract.code), address(contract.address), args(contract.args) {}
 
     ~Contract()
     {
@@ -41,7 +41,7 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(this->action);
         READWRITE(code);
-        READWRITE(callee);
+        READWRITE(address);
         READWRITE(args);
     }
 
@@ -49,7 +49,7 @@ public:
     {
         action = 0;
         code.clear();
-        callee.SetNull();
+        address.SetNull();
         args.clear();
     }
 
