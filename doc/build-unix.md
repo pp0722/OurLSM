@@ -19,9 +19,10 @@ To Build
 
 ```bash
 ./autogen.sh
-./configure
+./configure --disable-tests
 make
 make install # optional
+ldconfig
 ```
 
 This will build bitcoin-qt as well if the dependencies are met.
