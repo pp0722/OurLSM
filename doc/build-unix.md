@@ -22,7 +22,7 @@ This will build bitcoin-qt if the following dependencies are met.
 ./autogen.sh
 ./configure --disable-tests
 make
-make install # optional
+sudo make install # optional
 ldconfig
 ```
 
