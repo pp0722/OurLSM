@@ -3354,7 +3354,7 @@ UniValue callcontract(const JSONRPCRequest& request)
     Contract contract;
     contract.action = contract_action::ACTION_CALL;
     contract.address = uint256S(request.params[0].get_str());
-    if (request.params.size() > 1) {
+    if (request.params.size() > 1) { 
         for (unsigned i = 1; i < request.params.size(); i++)
             contract.args.push_back(request.params[i].get_str());
     }
