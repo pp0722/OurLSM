@@ -23,6 +23,8 @@ typedef struct _frame {
 
 /* call stack */
 static frame *curr_frame = NULL;
+FILE* in;
+FILE* out;
 
 static void push(const char *name)
 {
@@ -80,6 +82,9 @@ int start_runtime(int argc, char **argv)
         err_printf("usage: ourcontract-rt [CONTRACTS DIR] [CONTRACT] [ARG 1] [ARG 2] ...\n");
         return EXIT_FAILURE;
     }
+
+    in = fdopen(fileno(stdin), "rb");
+    out = fdopen(fileno(stdout), "wb");
 
     return call_contract(argv[2], argc - 2, argv + 2);
 }
@@ -243,4 +248,28 @@ int state_write(const void *buf, int count)
     }
 
     return write(curr_frame->state_fd, buf, count);
+}
+
+int send_money(const char* addr, long long amount)
+{
+    if (strlen(addr) > 40) return -1;
+    if (amount < 0) return -1;
+    int flag = BYTE_SEND_TO_ADDRESS;
+    fwrite((void*)&flag, sizeof(int), 1, out);
+    fwrite((void*)addr, sizeof(char), 40, out);
+    fwrite((void*)&amount, sizeof(long long), 1, out);
+    fflush(out);
+    return 0;
+}
+
+int send_money_to_contract(const char* addr, long long amount)
+{
+    if (strlen(addr) > 64) return -1;
+    if (amount < 0) return -1;
+    int flag = BYTE_SEND_TO_CONTRACT;
+    fwrite((void*)&flag, sizeof(int), 1, out);
+    fwrite((void*)addr, sizeof(char), 64, out);
+    fwrite((void*)&amount, sizeof(long long), 1, out);
+    fflush(out);
+    return 0;
 }
