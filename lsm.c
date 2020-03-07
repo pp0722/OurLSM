@@ -6,7 +6,7 @@
 
 
 
-#define MAX_ACCOUNTS 10
+#define MAX_ACCOUNTS 100
 #define MAX_ADDRESS_SIZE 256
 #define MAX_QUEUE_CAPACITY 100
 
@@ -20,7 +20,7 @@ typedef struct Account {
 } Account;
 
 typedef struct OffsetTx {
-    uint64_t id;
+    int id;
     char senderAddress[MAX_ADDRESS_SIZE];
     char receiverAddress[MAX_ADDRESS_SIZE];
     int amount;
@@ -28,9 +28,16 @@ typedef struct OffsetTx {
 
 typedef struct Queue {
     int front, rear, size;
-    int capacity;
-    OffsetTx *transactions;
+    unsigned capacity;
+    OffsetTx transactions[MAX_QUEUE_CAPACITY];
 } Queue;
+
+
+typedef struct AccountQ{
+    int front, rear, size;
+    unsigned capacity;
+    char addresses[MAX_ACCOUNTS][MAX_ADDRESS_SIZE]; 
+} AccountQ;
 
 // Prototypes
 
@@ -38,13 +45,15 @@ typedef struct Queue {
 static void initAccounts();
 static Account createAccount(char* address, int balance, int netBalance);
 void printAccounts();
+void printAccount(Account account);
+static Account* findAccount(char *address);
 
     // OffsetTx prototypes
-static OffsetTx createOffsetTx(char *senderAddress, char *receiverAddress, int amount);
+int createOffsetTx(char *senderAddress, char *receiverAddress, int amount);
 void printOffsetTx(OffsetTx tx);
 
     // Queues prototypes
-static void initQueue(int capacity);
+static void initQueue(unsigned capacity);
 void enqueue(OffsetTx tx);
 OffsetTx *dequeue();
 int isFull();
@@ -53,29 +62,52 @@ OffsetTx *getRear();
 OffsetTx *getFront();
 void printQueue();
 
+    // Account Queue
+static void initAccountQ(unsigned accountsCapacity);
+void enqueueAccountQ(char  *address);
+char *dequeueAccountQ();
+int isFullAccountQ();
+int isEmptyAccountQ();
+int isInAccountQ(char *address);
+void printAccountQ();
+
+    // Gridlock 
+void startGridLock();
+
 // Global variables
 Account *accounts;
 int accountsLength;
 Queue *queue;
+AccountQ *accountQueue;
+Queue *inactiveQueue;
 
 int main()
 {
     initAccounts();
     printAccounts();
+
     initQueue(MAX_QUEUE_CAPACITY);
+    initAccountQ(MAX_ACCOUNTS);
 
     // Queue test
-    dequeue();
     printQueue();
-    enqueue(createOffsetTx("0x1234", "0x5678", 2000));
-    enqueue(createOffsetTx("0x5678", "0x1234", 2500));
-    enqueue(createOffsetTx("0x8888", "0x5678", 4000));
-    enqueue(createOffsetTx("0x9999", "0x5678", 4500));
+    printAccountQ();
+
+       
+    
+    createOffsetTx("0x1234", "0x5678", 2000);
+
+    createOffsetTx("0x5678", "0x1234", 2500);
+    createOffsetTx("0x8888", "0x5678", 4000);
+    createOffsetTx("0x9999", "0x5678", 4500);
+    createOffsetTx("0x5678", "0x9999", 2500);
     getRear();
     getFront();
     dequeue();
     dequeue();
     printQueue();
+    printAccounts();
+    printAccountQ();
 
 
     return 0;
@@ -117,37 +149,81 @@ void printAccounts()
     }
 }
 
+void printAccount(Account account){
+    printf("%s, %d, %d \n", account.address, account.balance, account.netBalance);
+}
 
-static OffsetTx createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
+static Account* findAccount(char *address)
 {
-    //if (amount <= 0 ) return NULL;
+    for(int i = 0; i < accountsLength ; i ++) {
+        if(!strcmp(accounts[i].address , address))
+        {
+            return &accounts[i];
+        }
+    }
+    return NULL;
+}
+
+
+int createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
+{
+    
+    if (amount <= 0 ) {
+        printf("Amount must be strictly positive \n");
+        return -1;
+    };
+
+    Account *sender = findAccount(senderAddress);
+    if(sender == NULL){
+        printf("Sender Account not found : %s\n", senderAddress);
+        return -1;
+    }
+
+    Account *receiver = findAccount(receiverAddress);
+    if(receiver == NULL){
+        printf("Receiver Account not found : %s\n", senderAddress);
+        return -1;
+    }
+
+    
     OffsetTx tx;
     // TODO Generate TXID
     tx.id = 0;
     strcpy(tx.receiverAddress, receiverAddress);
     strcpy(tx.senderAddress, senderAddress);
     tx.amount  = amount;
-    return tx;
+
+
+    sender->netBalance -= amount;
+    receiver->netBalance += amount;
+    
+    enqueue(tx);
+
+    if( !isInAccountQ(sender->address)){
+        enqueueAccountQ(sender->address);
+    }
+    
+    return 0;
 }
 
 void printOffsetTx(OffsetTx tx)
 {
-    printf("%lu, %s, %s, %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    printf("%d, %s, %s, %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
 }
 
-static void initQueue(int capacity){
-    queue = malloc(sizeof(Queue));
+static void initQueue(unsigned capacity){
+    queue = (Queue*) malloc(sizeof(Queue));
     queue->capacity = capacity;
     queue->size = 0;
     queue->rear = capacity - 1;
     queue->front = 0;
-    queue->size = 0;
-    queue->transactions = (OffsetTx*) malloc(sizeof(capacity * sizeof(OffsetTx)));
+    //queue->transactions = (OffsetTx*) malloc(sizeof(capacity * sizeof(OffsetTx)));
 }
 
 
 void enqueue(OffsetTx tx){
     if(isFull()) return;
+    
     queue->rear = (queue->rear + 1 ) % queue->capacity;
     queue->transactions[queue->rear] = tx;
     queue->size++;
@@ -172,27 +248,97 @@ int isFull(){
 }
 
 int isEmpty(){
+    printf("Queue size : %d\n", queue->size);
     return (queue->size == 0);
 }
 
 OffsetTx *getRear(){
     if(isEmpty()) return NULL;
     OffsetTx *tx =  & (queue->transactions[queue->rear]);
-    printf("Rear element : %lu, %s, %s, %d \n", tx->id, tx->senderAddress, tx->receiverAddress, tx->amount);
+    printf("Rear element : %d, %s, %s, %d \n", tx->id, tx->senderAddress, tx->receiverAddress, tx->amount);
     return tx;
    
 }
 OffsetTx *getFront(){
     if(isEmpty()) return NULL;
     OffsetTx *tx =  &(queue->transactions[queue->front]);
-    printf("Front element : %lu, %s, %s, %d \n", tx->id, tx->senderAddress, tx->receiverAddress, tx->amount);
+    printf("Front element : %d, %s, %s, %d \n", tx->id, tx->senderAddress, tx->receiverAddress, tx->amount);
     return tx;
 }
 
 void printQueue(){
     if (isEmpty()) {printf("The queue is empty.\n");return;}
+    printf("Queue size %d\n", queue->size);
     for (int i = queue->front ; i < queue->rear + 1 ; i++)
     {
         printOffsetTx( (queue->transactions)[i] );
     }
+}
+
+
+static void initAccountQ(unsigned accountsCapacity){
+    accountQueue =  (AccountQ*) malloc(sizeof(AccountQ));
+    accountQueue->capacity = accountsCapacity;
+    accountQueue->size = 0;
+    accountQueue->rear = accountsCapacity - 1;
+    accountQueue->front = 0;
+   // accountQueue->accounts = (Account*) malloc(sizeof(accountsCapacity * sizeof(Account)));
+
+}
+
+void enqueueAccountQ(char *address)
+{
+    if(isFullAccountQ()) return;
+
+    accountQueue->rear = (accountQueue->rear + 1 ) % accountQueue->capacity;
+
+    strcpy(accountQueue->addresses[accountQueue->rear], address) ;
+    accountQueue->size++;
+    printf("Account Enqueued element : ");
+    printf("%s\n", accountQueue->addresses[accountQueue->rear]);
+}
+char *dequeueAccountQ()
+{
+    if(isEmptyAccountQ()) return NULL;
+    char *address = accountQueue->addresses[accountQueue->front];
+    accountQueue->front = (accountQueue->front + 1 ) % accountQueue->capacity;
+    accountQueue->size--;
+    printf("Account Dequeued element : ");
+    printf("%s\n", address );
+    return address;
+}
+
+int isFullAccountQ(){
+    return (accountQueue->size == accountQueue->capacity);
+}
+
+int isEmptyAccountQ(){
+    return (accountQueue->size == 0);
+}
+
+int isInAccountQ(char *address){
+    for(int i = accountQueue->front ; i < accountQueue->rear + 1 ; i++)
+    {
+        if( !strcmp(accountQueue->addresses[i],address) )
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
+void printAccountQ(){
+    if (isEmptyAccountQ()) {printf("The account queue is empty.\n");return;}
+    for (int i = accountQueue->front ; i < accountQueue->rear + 1 ; i++)
+    {
+        printf("%s\n", accountQueue->addresses[i]);
+    }
+}
+
+
+
+void startGridlock()
+{
+
 }
