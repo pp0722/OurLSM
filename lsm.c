@@ -17,7 +17,7 @@ typedef struct Account {
     char address[MAX_ADDRESS_SIZE];
     int balance;
     int netBalance; // Net balance used during GridLock Resolution
-    // todo add list of pending tx ?
+    // TODO :  add list of pending tx ?
 } Account;
 
 typedef struct OffsetTx {
@@ -60,6 +60,7 @@ void enqueue(Queue *queue, OffsetTx tx);
 OffsetTx *dequeue(Queue *queue);
 OffsetTx removeLatestTx(Queue * queue, char *address);
 void toInactiveQueue(int index);
+void reOrderQueue(Queue *queue);
 int isFull(Queue *queue);
 int isEmpty(Queue *queue);
 OffsetTx *getRear(Queue *queue);
@@ -77,6 +78,7 @@ void printAccountQ();
 
     // Gridlock 
 void startGridLock();
+void updateBalance();
 
 // Global variables
 Account *accounts;
@@ -98,7 +100,7 @@ int main()
     printQueue(activeQueue);
     printAccountQ();
 
-       
+    // Quorum Test case
     
     createOffsetTx("0xA", "0xB", 5000);
     createOffsetTx("0xB", "0xC", 6000);
@@ -110,7 +112,22 @@ int main()
     createOffsetTx("0xE", "0xA", 8000);
     createOffsetTx("0xE", "0xB", 100000);
     createOffsetTx("0xD", "0xA", 5000);
+    
 
+    // FISC Test case
+    /*
+    initAccounts();
+    createOffsetTx("0xA", "0xB", 1000);
+    createOffsetTx("0xA", "0xB", 2000);
+    createOffsetTx("0xB", "0xC", 1000);
+    createOffsetTx("0xC", "0xD", 4000);
+    createOffsetTx("0xD", "0xE", 4000);
+    createOffsetTx("0xE", "0xF", 4000);
+    createOffsetTx("0xF", "0xG", 4000);
+    createOffsetTx("0xG", "0xH", 4000);
+    createOffsetTx("0xH", "0xA", 4000);
+    createOffsetTx("0xA", "0xB", 1000);
+    */
 
     printQueue(activeQueue);
     printAccounts();
@@ -125,13 +142,26 @@ static void initAccounts(){
     accounts = malloc(sizeof(Account) * MAX_ACCOUNTS);
     accountsLength = 0;
 
+    // Quorum Test case
+    
     accounts[0] = createAccount("0xA", 3000, 3000);
     accounts[1] = createAccount("0xB", 4000, 4000);
     accounts[2] = createAccount("0xC", 5000, 5000);
     accounts[3] = createAccount("0xD", 4000, 4000);
     accounts[4] = createAccount("0xE", 3000, 3000);
+    
 
-
+   // FISC Test case
+   /*
+    accounts[0] = createAccount("0xA", 0, 0);
+    accounts[1] = createAccount("0xB", 0, 0);
+    accounts[2] = createAccount("0xC", 3000, 3000);
+    accounts[3] = createAccount("0xD", 0, 0);
+    accounts[4] = createAccount("0xE", 0, 0);
+    accounts[5] = createAccount("0xF", 0, 0);
+    accounts[6] = createAccount("0xG", 0, 0);
+    accounts[7] = createAccount("0xH", 0, 0);
+    */
 
 }
 
@@ -287,6 +317,7 @@ OffsetTx removeLatestTx(Queue *queue, char *address)
     Account *receiverAccount;
     OffsetTx tx ;
     int txIndex;
+
     // From rear to front queue (latest to oldest)
     printf("ACTIVE QUEUE STATE :\n");
     printQueue(queue);
@@ -331,6 +362,12 @@ void toInactiveQueue(int index){
     } 
     activeQueue->rear = activeQueue->rear - 1;
     activeQueue->size--;
+}
+
+// The inactive queue is initially unordered because removed TX are not queued in order.
+void reOrderQueue(Queue *queue)
+{
+    // TODO
 }
 
 int isFull(Queue *queue){
@@ -445,15 +482,28 @@ void startGridLock()
             removedTx = removeLatestTx(activeQueue, currentAddress);
             
         }
-        //if( !strcmp(currentAddress,"0xC")) break;
         
     }
 
+    // Update balance
+    updateBalance();
     printf("Gridlock has ended ... -------------------------------\n");
     printf("ACTIVE QUEUE\n");
     printQueue(activeQueue);
-    printf("INACTIVE QUEUE\n"); // TODO : inactive queue state should be ordered.
+    printf("INACTIVE QUEUE\n"); 
     printQueue(inactiveQueue);
     printAccounts();
-    // Settle remaining TX in the active queue
+
+    // TODO : - inactive queue state should be ordered
+    //        - tranfer Inactive TX to active queue
+}
+
+void updateBalance()
+
+{
+    printf("UPDATE BALANCE\n");
+    for (int i = 0 ; i < accountsLength ; i++)
+    {   
+        accounts[i].balance = accounts[i].netBalance;
+    }
 }
