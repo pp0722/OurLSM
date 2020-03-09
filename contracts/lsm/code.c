@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>  
 #include <string.h>
+#include <ourcontract.h>
+#include <assert.h>
+
 
 
 
@@ -38,6 +41,20 @@ typedef struct AccountQ{
     unsigned capacity;
     char addresses[MAX_ACCOUNTS][MAX_ADDRESS_SIZE]; 
 } AccountQ;
+
+// Contract state
+
+typedef struct state {
+    unsigned int size_contract; 
+    unsigned int tempCounter ;
+    unsigned int num_account;
+    unsigned int num_active_queue;
+    //unsgined int allocated_active_tx_queue_size;
+    unsigned int num_inactive_queue;
+    unsigned int num_account_queue;
+
+} ContractState;
+
 
 // Prototypes
 
@@ -81,66 +98,106 @@ void updateBalance();
 
 // Global variables
 Account *accounts;
-int accountsLength;
+int _account;
 Queue *activeQueue;
 AccountQ *accountQueue;
 Queue *inactiveQueue;
+ContractState theContractState;
 
-int tempCounter = 0;
 
-int main()
+
+// Contract Call functions 
+int transfer(char* senderAddress, char* receiverAddress ,int amount);
+
+// Contract State Read / Write
+static unsigned int readState();
+static unsigned int readContractState(unsigned char*, unsigned int);
+static unsigned int readAccountArray(unsigned char*, unsigned int );
+static unsigned int readActiveQueue(unsigned char*, unsigned int);
+static unsigned int readInactiveQueue(unsigned char*, unsigned int);
+static unsigned int readAccountsQueue(unsigned char*, unsigned int);
+
+static unsigned int writeState();
+static unsigned int writeContractStateToState(unsigned char*, unsigned int);
+static unsigned int writeAccountArrayToState(unsigned char*, unsigned int);
+static unsigned int writeActiveQueueToState(unsigned char*, unsigned int);
+static unsigned int writeInactiveQueueToState(unsigned char*, unsigned int);
+static unsigned int writeAccountQueueToState(unsigned char*, unsigned int);
+
+static unsigned int compute_contract_size();
+// Contract prototypes
+static int too_few_args()
 {
-    initAccounts();
-    printAccounts();
+    err_printf("too few args\n");
+    return -1;
+}
 
-    initQueue(MAX_QUEUE_CAPACITY);    
-    initAccountQ(MAX_ACCOUNTS);
 
-    printQueue(activeQueue);
-    printAccountQ();
+// Contract main function
 
-    // Quorum Test case
-    
-    createOffsetTx("0xA", "0xB", 5000);
-    createOffsetTx("0xB", "0xC", 6000);
-    createOffsetTx("0xB", "0xC", 30000);
-    createOffsetTx("0xC", "0xD", 8000);
-    createOffsetTx("0xC", "0xE", 80000);
-    createOffsetTx("0xD", "0xE", 7000);
-    createOffsetTx("0xA", "0xC", 6000);
-    createOffsetTx("0xE", "0xA", 8000);
-    createOffsetTx("0xE", "0xB", 100000);
-    createOffsetTx("0xD", "0xA", 5000);
-    
+int contract_main(int argc, char** argv)
+{
+    if (argc < 2 )
+    {
+        too_few_args();
+        return -1;
+    }
 
-    // FISC Test case
-    /*
-    initAccounts();
-    createOffsetTx("0xA", "0xB", 1000);
-    createOffsetTx("0xA", "0xB", 2000);
-    createOffsetTx("0xB", "0xC", 1000);
-    createOffsetTx("0xC", "0xD", 4000);
-    createOffsetTx("0xD", "0xE", 4000);
-    createOffsetTx("0xE", "0xF", 4000);
-    createOffsetTx("0xF", "0xG", 4000);
-    createOffsetTx("0xG", "0xH", 4000);
-    createOffsetTx("0xH", "0xA", 4000);
-    createOffsetTx("0xA", "0xB", 1000);
-    */
+    if(!strcmp(argv[1], "init"))
+    {
+        err_printf("Init contract\n");
+        initAccounts();
+        initQueue(MAX_QUEUE_CAPACITY);    
+        initAccountQ(MAX_ACCOUNTS);
+        theContractState.size_contract = compute_contract_size();
+        theContractState.tempCounter = 0;
+        printAccounts();
 
-    printQueue(activeQueue);
-    printAccounts();
-    printAccountQ();
+        writeState();
+    }
+    else
+    {
+        readState();
+        err_printf("BEFORE CONTRACT CALL STATE ------------\n");
+        printAccounts();
+        printQueue(activeQueue);
+        printQueue(inactiveQueue);
+        printAccountQ(accountQueue);
+        err_printf("---------------------------------------\n");
+        // if case 1 (send TX)
+        if(!strcmp(argv[1], "activequeue")) {
+            printQueue(activeQueue);
+        }
+        else if(!strcmp(argv[1], "transfer"))
+        {
+            if (argc < 5){
+               return too_few_args();
+            }
+            err_printf("transfer : %d\n", transfer(argv[2], argv[3], atoi(argv[4])));
+        }
+        else {
+            err_printf("error : command not found : %s\n", argv[1]);
+            return 0;
+        }
+        // if case 2 (remove TX )
 
-    startGridLock();
-    
+        // if case 3 (reorder TX )
+        // if case 4 (start gridlock) ....
+
+
+
+
+        theContractState.size_contract = compute_contract_size();
+        writeState();
+    }
     return 0;
-};
+}
+
+
 
 static void initAccounts(){
     accounts = malloc(sizeof(Account) * MAX_ACCOUNTS);
-    accountsLength = 0;
-
+    theContractState.num_account = 0;
     // Quorum Test case
     
     accounts[0] = createAccount("0xA", 3000, 3000);
@@ -173,7 +230,7 @@ static Account createAccount(char* address, int balance, int netBalance)
     account.balance = balance;
     account.netBalance = netBalance;
 
-    accountsLength++;
+    theContractState.num_account ++;
 
     return account;
 }
@@ -181,10 +238,10 @@ static Account createAccount(char* address, int balance, int netBalance)
 void printAccounts()
 {
     printf("ACCOUNTS BALANCE STATES : \n");
-    for(int i = 0 ; i < accountsLength ; i++)
+    for(int i = 0 ; i < theContractState.num_account ; i++)
     {
         
-        printf("address : %s, balance : %d, netBalance  : %d \n", accounts[i].address, accounts[i].balance, accounts[i].netBalance);
+        err_printf("address : %s, balance : %d, netBalance  : %d \n", accounts[i].address, accounts[i].balance, accounts[i].netBalance);
     }
 }
 
@@ -195,7 +252,7 @@ void printAccount(Account account){
 
 static Account* findAccount(char *address)
 {
-    for(int i = 0; i < accountsLength ; i ++) {
+    for(int i = 0; i < theContractState.num_account ; i ++) {
         if(!strcmp(accounts[i].address , address))
         {
             return &accounts[i];
@@ -206,7 +263,7 @@ static Account* findAccount(char *address)
 
 int getNetBalance(char *address)
 {
-    for(int i  = 0 ; i < accountsLength ; i++)
+    for(int i  = 0 ; i < theContractState.num_account ; i++)
     {
         if (!strcmp(accounts[i].address,address))
         {
@@ -246,8 +303,8 @@ int createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
     OffsetTx tx;
     
     // TODO Generate TXID
-    tx.id = tempCounter;
-    tempCounter++;
+    tx.id = theContractState.tempCounter ;
+    theContractState.tempCounter++;
     strcpy(tx.receiverAddress, receiverAddress);
     strcpy(tx.senderAddress, senderAddress);
     tx.amount  = amount;
@@ -267,7 +324,7 @@ int createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
 
 void printOffsetTx(OffsetTx tx)
 {
-    printf("%d, %s, %s, %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    err_printf("%d, %s, %s, %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
 }
 
 static void initQueue(unsigned capacity){
@@ -391,9 +448,10 @@ OffsetTx *getFront(Queue *queue){
     return tx;
 }
 
+
 void printQueue(Queue *queue){
-    if (isEmpty(queue)) {printf("The queue is empty.\n");return;}
-    printf("QUEUE STATE : \n");
+    if (isEmpty(queue)) {err_printf("The queue is empty.\n");return;}
+    err_printf("QUEUE STATE : \n");
     for (int i = queue->front ; i < queue->rear + 1 ; i++)
     {
         printOffsetTx( (queue->transactions)[i] );
@@ -454,11 +512,11 @@ int isInAccountQ(char *address){
 
 
 void printAccountQ(){
-    if (isEmptyAccountQ()) {printf("The account queue is empty.\n");return;}
-    printf("ACCOUNT QUEUE STATE : \n");
+    if (isEmptyAccountQ()) {err_printf("The account queue is empty.\n");return;}
+    err_printf("ACCOUNT QUEUE STATE : \n");
     for (int i = accountQueue->front ; i < accountQueue->rear + 1 ; i++)
     {
-        printf("%s\n", accountQueue->addresses[i]);
+        err_printf("%s\n", accountQueue->addresses[i]);
     }
 }
 
@@ -467,7 +525,7 @@ void printAccountQ(){
 void startGridLock()
 {   
     char *currentAddress;
-    OffsetTx removedTx;
+    //OffsetTx removedTx;
     printf("Gridlock starting ... ------------------------------- \n");
     while( accountQueue->size > 0)
     {
@@ -478,7 +536,7 @@ void startGridLock()
 
         while (getNetBalance(currentAddress) < 0) 
         {
-            removedTx = removeLatestTx(activeQueue, currentAddress);
+            removeLatestTx(activeQueue, currentAddress);
             
         }
         
@@ -501,8 +559,190 @@ void updateBalance()
 
 {
     printf("UPDATE BALANCE\n");
-    for (int i = 0 ; i < accountsLength ; i++)
+    for (int i = 0 ; i < theContractState.num_account ; i++)
     {   
         accounts[i].balance = accounts[i].netBalance;
     }
+}
+
+// Contract call functions
+
+int transfer(char* senderAddress, char* receiverAddress ,int amount)
+{
+    Account* senderAccount = findAccount(senderAddress);
+    if (senderAccount == NULL) {
+        err_printf("%s account not found\n", senderAddress);
+        return -1;
+    }
+
+    Account* receiverAccount = findAccount(receiverAddress);
+    if (receiverAccount == NULL) {
+        err_printf("%s account not found\n", receiverAddress);
+        return -1;
+        //appendToAccountArray(createAccount(receiverAddress));
+        //receiverAccount = findAccount(receiverAddress);
+
+    }
+
+    if (senderAccount->balance >= amount && amount > 0) {
+        receiverAccount->balance += amount;
+        receiverAccount->netBalance += amount;
+        senderAccount->balance -= amount;
+        senderAccount->netBalance -= amount;
+        return 0;
+    }
+
+    err_printf("insufficient funds\n");
+    int res = createOffsetTx(senderAddress,receiverAddress,amount);
+    return res;
+}
+
+// Contract State Read / Write
+
+static unsigned int readState(){
+    /*
+        Use state_read() to read your program data
+        The data are stored in memory, tight together with UTXO so it will revert automatically
+
+        state_read(buff, size) is straightforward: read `size` bytes to `buff`
+        The point is how you define your structure and serialize it
+
+        The following code is just one of the way to read state
+            * In write stage: 
+            * you first write how many byte you stored
+            * then write all your data
+            * In read stage:
+            * first get the size of data
+            * then get all the data
+            * unserialize the data    
+    */
+
+    unsigned int count;
+    state_read(&count, sizeof(int));
+
+    unsigned char* buff = malloc(sizeof(char) * count);
+    unsigned int offset = 0;
+    state_read(buff, count);
+    
+    offset += readContractState(buff, offset);
+    offset += readAccountArray(buff, offset);
+    offset += readActiveQueue(buff, offset);
+    offset += readInactiveQueue(buff, offset);
+    offset += readAccountsQueue(buff, offset);
+
+    assert(offset == count);
+    return offset;
+}
+
+static unsigned int readContractState(unsigned char* buffer, unsigned int offset)
+{
+    memcpy(&theContractState, buffer+offset, sizeof(ContractState));
+    return sizeof(ContractState);
+}
+
+static unsigned int readAccountArray(unsigned char* buffer, unsigned int offset)
+{
+    accounts = malloc(sizeof(Account) * MAX_ACCOUNTS);
+    memcpy(accounts, buffer+offset, sizeof(Account) * MAX_ACCOUNTS);
+    return sizeof(Account) * MAX_ACCOUNTS;
+}
+
+static unsigned int readActiveQueue(unsigned char* buffer, unsigned int offset)
+{
+    //globalAllowanceArray = malloc(sizeof(Allowance) * theContractState.allocated_allowance_array_size);
+    activeQueue = (Queue*) malloc(sizeof(Queue));
+    memcpy(activeQueue, buffer+offset, sizeof(Queue));
+    return sizeof(Queue);
+}
+static unsigned int readInactiveQueue(unsigned char* buffer, unsigned int offset)
+{
+    inactiveQueue = (Queue*) malloc(sizeof(Queue));
+    memcpy(inactiveQueue, buffer+offset, sizeof(Queue));
+    return sizeof(Queue);
+}
+static unsigned int readAccountsQueue(unsigned char* buffer, unsigned int offset)
+{
+    accountQueue = (AccountQ*) malloc(sizeof(AccountQ));
+    memcpy(accountQueue, buffer+offset, sizeof(AccountQ));
+    return sizeof(AccountQ);
+}
+
+
+static unsigned int writeState()
+{
+    /*
+        Use state_write() to write your program data
+        The data are stored in memory, tight together with UTXO so it will revert automatically
+
+        state_read(buff, size) is straightforward: write `size` bytes from `buff`
+        
+        Warning: You need to write all your data at once. 
+        The state is implement as a vector, and will resize every time you use state_write
+        So if you write multiple times, it will be the size of last write
+
+        One way to solve this is you memcpy() all your serialized data to a big array
+        and then call only one time state_write()
+    */
+
+    unsigned char *buff = malloc(sizeof(int) + sizeof(char) * theContractState.size_contract);
+    unsigned int offset = 0;
+
+    memcpy(buff, &theContractState.size_contract, sizeof(int));
+    offset += sizeof(int);
+
+    offset += writeContractStateToState(buff, offset);
+    offset += writeAccountArrayToState(buff, offset);
+    offset += writeActiveQueueToState(buff, offset);
+    offset += writeInactiveQueueToState(buff, offset);
+    offset += writeAccountQueueToState(buff, offset);
+    
+    assert(offset == sizeof(int) + sizeof(char)* theContractState.size_contract);
+    state_write(buff, offset);
+    return offset;
+}
+
+static unsigned int writeContractStateToState(unsigned char* buffer, unsigned int offset)
+{
+    memcpy(buffer+offset, &theContractState, sizeof(ContractState));
+    return sizeof(ContractState);
+}
+
+static unsigned int writeAccountArrayToState(unsigned char* buffer, unsigned int offset)
+{    
+    memcpy(buffer+offset, accounts, sizeof(Account) * MAX_ACCOUNTS);
+    return sizeof(Account) * MAX_ACCOUNTS;
+}
+
+static unsigned int writeActiveQueueToState(unsigned char* buffer, unsigned int offset)
+{    
+    memcpy(buffer+offset, activeQueue, sizeof(Queue) );
+    return sizeof(Queue);
+}
+
+static unsigned int writeInactiveQueueToState(unsigned char* buffer, unsigned int offset)
+{    
+    memcpy(buffer+offset, inactiveQueue, sizeof(Queue) );
+    return sizeof(Queue);
+}
+
+static unsigned int writeAccountQueueToState(unsigned char* buffer, unsigned int offset)
+{    
+    memcpy(buffer+offset, accountQueue, sizeof(AccountQ) );
+    return sizeof(AccountQ);
+}
+
+
+static unsigned int compute_contract_size()
+{
+    unsigned int size_sum = 0;
+
+    
+    unsigned int sz_contract_state = sizeof(ContractState);
+    unsigned int sz_account_array = sizeof(Account) * MAX_ACCOUNTS;
+    unsigned int sz_active_queue = sizeof(Queue);
+    unsigned int sz_inactive_queue = sizeof(Queue);
+    unsigned int sz_account_queue = sizeof(AccountQ);
+
+    size_sum =  sz_contract_state + sz_account_array + sz_active_queue + sz_inactive_queue + sz_account_queue;
+    return size_sum;
 }
