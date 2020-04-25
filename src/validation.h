@@ -308,6 +308,10 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                         bool* pfMissingInputs, std::list<CTransactionRef>* plTxnReplaced = nullptr,
                         bool fOverrideMempoolLimit=false, const CAmount nAbsurdFee=0);
 
+
+bool AcceptToMemoryPoolLSM(CTxMemPool& pool, CValidationState &state, const CTransactionRef &tx, bool fLimitFree,
+                        bool* pfMissingInputs, std::list<CTransactionRef>* plTxnReplaced = nullptr,
+                        bool fOverrideMempoolLimit=false, const CAmount nAbsurdFee=0);
 /** Convert CValidationState to a human-readable message for logging */
 std::string FormatStateMessage(const CValidationState &state);
 

@@ -7,6 +7,11 @@
 
 #include "base58.h"
 #include "checkpoints.h"
+// Oracle imports
+#include "core_io.h"
+#include "rpc/server.h"
+//
+
 #include "chain.h"
 #include "wallet/coincontrol.h"
 #include "consensus/consensus.h"
@@ -3222,6 +3227,20 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey, CCon
                 wtxNew.RelayWalletTransaction(connman);
             }
         }
+
+        // TEST ON NORMAL TX - to be removed
+        // Send message to oracle
+       
+       if(connman)
+       {
+           std::string strNode = "127.0.0.1:8080";
+           if(CNode* oracleNode = connman->FindNode(strNode)){
+               char *hello = "Hello from BITCOIN"; 
+               send(oracleNode->hSocket, hello, sizeof(hello),0);
+           };
+           
+
+       }
     }
     return true;
 }
@@ -3270,6 +3289,27 @@ bool CWallet::CommitTransactionLSM(CWalletTx& wtxNew, CReserveKey& reservekey, C
             }
         }
         */
+
+       // Send message to oracle
+       
+       if(connman)
+       {
+           std::string strNode = "127.0.0.1:8080";
+           if(CNode* oracleNode = connman->FindNode(strNode)){
+               char *hello = "Hello from BITCOIN";
+                // Hex tx Hash can't be unserialized by Oracle
+                //std::string hexSerializedTx = wtxNew.GetHash().GetHex();
+                std::string strHex = EncodeHexTx(static_cast<CTransaction>(wtxNew), RPCSerializationFlags());
+                const char *buffer = strHex.c_str();
+
+               send(oracleNode->hSocket, buffer, strlen(buffer),0);
+
+
+           };
+           
+
+       }
+
     }
     return true;
 }

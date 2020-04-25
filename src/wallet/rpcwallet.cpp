@@ -448,9 +448,9 @@ static void SendMoneyLSM(CWallet * const pwallet, const CTxDestination &address,
 
 
         // Commit part (send to Oracle ?) TODO
-        
+        // Note on 04/10 ; beforehand CommitTransaction -> store in wallet w/o broadcast
         CValidationState state;
-        if (!pwallet->CommitTransaction(wtxNew, reservekey, g_connman.get(), state)) {
+        if (!pwallet->CommitTransactionLSM(wtxNew, reservekey, g_connman.get(), state)) {
             strError = strprintf("Error: The transaction was rejected! Reason given: %s", state.GetRejectReason());
             throw JSONRPCError(RPC_WALLET_ERROR, strError);
         }
@@ -654,7 +654,8 @@ UniValue sendtoaddressLSM(const JSONRPCRequest& request)
 
     SendMoneyLSM(pwallet, address.Get(), nAmount, fSubtractFeeFromAmount, wtx, coin_control);
 
-
+    // Send Hex-serialized transaction to Oracle
+    // Done in CommitTransactionLSM function in wallet.cpp
 
     return wtx.GetHash().GetHex();
 }
