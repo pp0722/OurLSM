@@ -23,6 +23,116 @@ typedef struct _frame {
 
 /* call stack */
 static frame *curr_frame = NULL;
+FILE* in;
+FILE* out;
+
+static inline bool processmantissadigit(char ch, int64_t *mantissa, int *mantissa_tzeros)
+{
+    if(ch == '0')
+        *mantissa_tzeros=*mantissa_tzeros + 1;
+    else {
+        for (int i=0; i<=(*mantissa_tzeros); ++i) {
+            if ((*mantissa) > (UPPER_BOUND / 10LL))
+                return false; /* overflow */
+            *mantissa = *mantissa * 10;
+        }
+        *mantissa = *mantissa + ch - '0';
+        *mantissa_tzeros = 0;
+    }
+    return true;
+}
+
+bool parsefixedpoint(const char *val, int decimals, int64_t *amount_out)
+{
+    int64_t mantissa = 0;
+    int64_t exponent = 0;
+    int mantissa_tzeros = 0;
+    bool mantissa_sign = false;
+    bool exponent_sign = false;
+    int ptr = 0;
+    int end = strlen(val);
+    int point_ofs = 0;
+
+    if (ptr < end && val[ptr] == '-') {
+        mantissa_sign = true;
+        ++ptr;
+    }
+    if (ptr < end)
+    {
+        if (val[ptr] == '0') {
+            /* pass single 0 */
+            ++ptr;
+        } else if (val[ptr] >= '1' && val[ptr] <= '9') {
+            while (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
+                if (!processmantissadigit(val[ptr], &mantissa, &mantissa_tzeros))
+                    return false; /* overflow */
+                ++ptr;
+            }
+        } else return false; /* missing expected digit */
+    } else return false; /* empty string or loose '-' */
+    if (ptr < end && val[ptr] == '.')
+    {
+        ++ptr;
+        if (ptr < end && val[ptr] >= '0' && val[ptr] <= '9')
+        {
+            while (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
+                if (!processmantissadigit(val[ptr], &mantissa, &mantissa_tzeros))
+                    return false; /* overflow */
+                ++ptr;
+                ++point_ofs;
+            }
+        } else return false; /* missing expected digit */
+    }
+    if (ptr < end && (val[ptr] == 'e' || val[ptr] == 'E'))
+    {
+        ++ptr;
+        if (ptr < end && val[ptr] == '+')
+            ++ptr;
+        else if (ptr < end && val[ptr] == '-') {
+            exponent_sign = true;
+            ++ptr;
+        }
+        if (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
+            while (ptr < end && val[ptr] >= '0' && val[ptr] <= '9') {
+                if (exponent > (UPPER_BOUND / 10LL))
+                    return false; /* overflow */
+                exponent = exponent * 10 + val[ptr] - '0';
+                ++ptr;
+            }
+        } else return false; /* missing expected digit */
+    }
+    if (ptr != end)
+        return false; /* trailing garbage */
+
+    /* finalize exponent */
+    if (exponent_sign)
+        exponent = -exponent;
+    exponent = exponent - point_ofs + mantissa_tzeros;
+
+    /* finalize mantissa */
+    if (mantissa_sign)
+        mantissa = -mantissa;
+
+    /* convert to one 64-bit fixed-point value */
+    exponent += decimals;
+    if (exponent < 0)
+        return false; /* cannot represent values smaller than 10^-decimals */
+    if (exponent >= 18)
+        return false; /* cannot represent values larger than or equal to 10^(18-decimals) */
+
+    for (int i=0; i < exponent; ++i) {
+        if (mantissa > (UPPER_BOUND / 10LL) || mantissa < -(UPPER_BOUND / 10LL))
+            return false; /* overflow */
+        mantissa *= 10;
+    }
+    if (mantissa > UPPER_BOUND || mantissa < -UPPER_BOUND)
+        return false; /* overflow */
+
+    if (amount_out)
+        *amount_out = mantissa;
+
+    return true;
+}
 
 static void push(const char *name)
 {
@@ -80,6 +190,9 @@ int start_runtime(int argc, char **argv)
         err_printf("usage: ourcontract-rt [CONTRACTS DIR] [CONTRACT] [ARG 1] [ARG 2] ...\n");
         return EXIT_FAILURE;
     }
+
+    in = fdopen(fileno(stdin), "rb");
+    out = fdopen(fileno(stdout), "wb");
 
     return call_contract(argv[2], argc - 2, argv + 2);
 }
@@ -243,4 +356,38 @@ int state_write(const void *buf, int count)
     }
 
     return write(curr_frame->state_fd, buf, count);
+}
+
+int send_money(const char* addr, CAmount amount)
+{
+    if (strlen(addr) > 40) return -1;
+    if (amount < 0) return -1;
+    int flag = BYTE_SEND_TO_ADDRESS;
+    fwrite((void*)&flag, sizeof(int), 1, out);
+    fwrite((void*)addr, sizeof(char), 40, out);
+    fwrite((void*)&amount, sizeof(CAmount), 1, out);
+    fflush(out);
+    return 0;
+}
+
+int send_money_to_contract(const char* addr, CAmount amount)
+{
+    if (strlen(addr) > 64) return -1;
+    if (amount < 0) return -1;
+    int flag = BYTE_SEND_TO_CONTRACT;
+    fwrite((void*)&flag, sizeof(int), 1, out);
+    fwrite((void*)addr, sizeof(char), 64, out);
+    fwrite((void*)&amount, sizeof(CAmount), 1, out);
+    fflush(out);
+    return 0;
+}
+
+CAmount amount_from_string(const char *val)
+{
+    CAmount amount;
+    if (!parsefixedpoint(val, 8, &amount))
+        err_printf("amount_from_string: Invalid amount\n");
+    if (!MoneyRange(amount))
+        err_printf("amount_from_string: Amount out of range\n");
+    return amount;
 }
