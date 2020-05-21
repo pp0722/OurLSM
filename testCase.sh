@@ -5,6 +5,13 @@
 # Once the Oracle received the transaction, the latter will periodically start gridlock sessions and send the solution to the network which will eventually update the wallet balance of users involved in the gridlock sessions.
 
 
+# Helping functions
+showTime() {
+        startTimestamp=$(date +"%s")
+        startTime=$(date)
+	echo "[INFO] $startTimestamp - $startTime"
+}
+
 # Wallet balance initialization
 
 # Simple Case : two users test case. A initial balance 100. B initial balance : 50
@@ -13,6 +20,7 @@ balanceArr=(100 50)
 
 # Ubin test Case (See Ubin Phase 2 pdf file)
 #ubinBalanceArr=(3 4 5 4 3)
+
 
 echo "[INFO] init balance ..."
 
@@ -43,3 +51,6 @@ bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/b
 sleep 0.5
 echo "[INFO] B sends 100 to A"
 bitcoin-cli -regtest -datadir=/home/david/.bitcoinB/ -conf=/home/david/.bitcoinB/bitcoin.conf sendtoaddressLSM $addressA 100
+
+
+

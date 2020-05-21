@@ -9,6 +9,8 @@ import time
 import timeit
 import argparse
 import csv
+from datetime import datetime
+from speedTestCase import *
 
 class Queue:
     "A container with a first-in-first-out (FIFO) queuing policy."
@@ -32,13 +34,17 @@ class Queue:
 
 class Transaction:
     id = 1
-    def __init__(self,senderId, receiverId, amount, vins, hexVins):
+    def __init__(self,senderId, receiverId, amount, vins, hexVins, createdAt):
         self.id = Transaction.id
         self.senderId = senderId
         self.receiverId = receiverId
         self.amount = amount
         self.vins = vins
         self.hexVins = hexVins # CONCATENATED hex vins
+        self.createdAt = createdAt
+        self.queueAt = 0
+        self.solvedAt = 0
+        self.offsetTime = 0  # Time of gridlock solution (with pending time removed) from transaction received to solution creation
         Transaction.id = Transaction.id + 1
 
     def printInfo(self):
@@ -130,6 +136,7 @@ def initTx(case="ubin", txNumber=0):
             createTransactionAndUpdate(senderId, receiverId, amount, None, None)
 
 def createTransactionAndUpdate(senderId,receiverId,outValue, vins, hexVins):
+    global accounts
     # Create the new transaction 
     newTx = Transaction(senderId, receiverId, outValue, vins, hexVins)
 
@@ -145,6 +152,7 @@ def createTransactionAndUpdate(senderId,receiverId,outValue, vins, hexVins):
     accounts[receiverId]["netBalance"] += outValue
 
 def printAccounts():
+    global accounts
     print("\n\n----- Accounts State -----")
     for id_ in accounts:
         print("id : {}, balance : {}, netBalance : {}, addresses : {}".format(id_,accounts[id_]["balance"],accounts[id_]["netBalance"],accounts[id_]["addresses"]))
@@ -164,6 +172,11 @@ def printInactiveTxQueue():
 # Method returning the owner of the transaction.
 # For the moment, we assume the Oracle knows the transaction order and each user will be identified with the following ID : "A", "B", "C", "D", "E"
 def getOwnerId():
+    global txCounter
+
+    if txCounter == len(txSenderIdOrder): 
+        txCounter = 0 # reset tx counter
+
     return txSenderIdOrder[txCounter], txReceiverIdOrder[txCounter]
 
 # Method returning the hexEncoded vins which will concatenated in the gridlock solution
@@ -189,7 +202,7 @@ def BigToLittleEndian(bigHex):
 
     littleHex = ''.join(littleBytesArray)
     
-    print(littleHex)
+    #print(littleHex)
     return littleHex
 
 def amountToSatoshis(amount):
@@ -211,6 +224,7 @@ def getHexCounterOfOutputs(counter):
 # Return list of transactions that is part of the gridlock solution
 def gridlock():
 
+    global accounts
     print("\n-----Pre-gridlock Accounts State -----")
     printAccounts()
 
@@ -220,9 +234,14 @@ def gridlock():
 
     
     print("\n ----- Gridlock has started -----")
+    
     while len(accountQueue.list) > 0:
-        currentId = accountQueue.pop()
+        printActiveTxQueue()
+        printAccounts()
+        print("Account Queue list : {}".format(accountQueue.list))
         
+        currentId = accountQueue.pop()
+        print("Account pop {}".format(currentId))
         
         if(accounts[currentId]["netBalance"] >= 0):
             continue # if net balance is positive, we do not need to remove transaction from active queue for the moment.
@@ -238,21 +257,18 @@ def gridlock():
         
 
 def removeLatestTx(id_):
+    global accounts
+    print("RemoveLatestTx call ...")
     if len(activeTxQueue.list) == 0:
         print("\n Active transaction queue is empty.")
         return
     
-    # initialize tx index in active Queue
-    txIndex = 0
+    # initialize tx index in active Queue, remove only the first one and check again
     for index, tx in enumerate(activeTxQueue.list):
         if tx.senderId == id_:
             
             accounts[tx.senderId]["netBalance"] += tx.amount
             accounts[tx.receiverId]["netBalance"] -= tx.amount
-
-            # queue receiver in accounts queue as its net balance changed.
-            if tx.receiverId not in accountQueue.list:
-                accountQueue.push(tx.receiverId)
 
             # delete from activeQueue
             del activeTxQueue.list[index]
@@ -263,7 +279,16 @@ def removeLatestTx(id_):
 
             # push to inactiveQueue
             inactiveTxQueue.push(tx)
+
+
+            # queue receiver in accounts queue as its net balance changed.
+            if tx.receiverId not in accountQueue.list:
+                print("Account push : {}".format(tx.receiverId))
+                accountQueue.push(tx.receiverId)
+            
             break
+
+            
 
 def getNumberOfInputs():
     counter = 0
@@ -295,11 +320,11 @@ def getFirstUTXO():
     print(txAddress, txId, amount)
     return txAddress, txId, amount
 
-def createTransactionFromSolution(fee=0):
-
+def createTransactionFromSolution(startGridlockTime,fee=0):
+    global accounts
 
     if fee > 0:
-        # NB : We can't use -createrawtransaction API call as tthe flag to perform a speed testhe inputs are already signed. Therefore we need to concatenate inputs and output hex data
+        # NB : We can't use -createrawtransaction API call as tthe flag to perform       
         print("\n ----- Creating Transaction from solution ...")
         hexEncodedTx = ""
         # Transaction version (1 byte - default : "02")
@@ -316,9 +341,21 @@ def createTransactionFromSolution(fee=0):
         # output - 
 
         # Number of TxOut (Variable Integer - default : 1 byte)
-        counterOutputs = len(activeTxQueue.list)
+        #counterOutputs = len(activeTxQueue.list)
+
+        #NEW
+        outId = []
+        for tx in activeTxQueue.list:
+            if tx.senderId not in outId:
+                outId.append(tx.senderId)
+            if tx.receiverId not in outId:
+                outId.append(tx.receiverId)
+        counterOutputs = len(outId)
+        
         hexEncodedTx += getHexCounterOfOutputs(counterOutputs)
 
+
+        """
         for tx in activeTxQueue.list:
 
         # Satoshis (8 bytes - little endian) - added fees
@@ -340,12 +377,45 @@ def createTransactionFromSolution(fee=0):
 
         # pubScriptKey (Variable Integer - usually : 19 bytes ) call -validateaddress to generate the scriptPubKey from the receiver bitcoin address
             hexEncodedTx += receiverInfoJson["scriptPubKey"]
+
+
+        """
+
+        # NEW
+        for receiverId in outId:
+
+        # Satoshis (8 bytes - little endian) - added fees
+            satoshis = amountToSatoshis(accounts[receiverId]["netBalance"] - fee)
+            hexAmount = amountToHex(satoshis)
+            hexEncodedTx += hexAmount
+
+
+        # pubScriptKey size / length in bytes (Variable Integer - default : 1 byte = 0x19 -> 25 bytes )
+            receiverAddress = accounts[receiverId]["addresses"][0]
+            subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "validateaddress", receiverAddress  ],stdout=subprocess.PIPE)
+            subProcessString = subProcessCall.stdout
+            dsubProcessCall = subProcessString.decode('utf-8')
+
+            receiverInfoJson = json.loads(dsubProcessCall)
+            bytesCounter = int(len(receiverInfoJson["scriptPubKey"]) / 2)
+            # Assume it is 1 byte and always 0x19
+            hexEncodedTx += hex(bytesCounter)[2:]
+
+        # pubScriptKey (Variable Integer - usually : 19 bytes ) call -validateaddress to generate the scriptPubKey from the receiver bitcoin address
+            hexEncodedTx += receiverInfoJson["scriptPubKey"]
+
+
+        # Save processing time by the Oracle from received tx time to final tx inclusion
         
+        saveGridlockTime(startGridlockTime)
+
+
         # Sequence (4 bytes - TBD : 42000000, 66000000)
         hexEncodedTx += "00000000"
 
         print("Hex encoded tx : ")
         print(hexEncodedTx)
+        print("Length bytes : {}".format(len(hexEncodedTx) /  2))
         return hexEncodedTx
     else:
         print("Unsuffiscient Fees. Please set a minimum tx fee using --settxfee when starting the oracleServer")
@@ -409,15 +479,40 @@ def sendTransaction(hexEncodedTx):
 def generateNewBlock(period):
     
     subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "generate", "1" ],stdout=subprocess.PIPE)
-    #subProcessString = subProcessCall.stdout
-    #dsubProcessCall = subProcessString.decode('utf-8')
+    subProcessString = subProcessCall.stdout
+    dsubProcessCall = subProcessString.decode('utf-8')
+    print("{}".format(dsubProcessCall))
 
+# Update balance from sent UTXO
 def updateBalance():
+    global accounts
     print("Updating balance ...")
     for tx in activeTxQueue.list:
         accounts[tx.senderId]['balance'] = 0
         accounts[tx.senderId]['netBalance'] = 0
+
+# Update balance inactive tx moved back to active tx for the next round
+def updateBalanceBack():
+    global accounts
+    print("Updating balance BACK ...")
+    for tx in activeTxQueue.list:
+        accounts[tx.senderId]['netBalance'] -= tx.amount
+        accounts[tx.receiverId]['netBalance']+= tx.amount
+        # push tx account back in queue
+        accountQueue.push(tx.senderId)
+
+def saveGridlockTime(startGridlockTime):
+    endGridlockTime = datetime.now()
     
+    # Remove gridlock time to get the absolute gridlock time
+   # solvedAt = datetime.now()
+    #tx.solvedAt = solvedAt
+    with open('solving_speed.csv', 'a') as f:
+            writer = csv.writer(f)
+            for tx in activeTxQueue.list:
+                tx.solvedAt = endGridlockTime
+                tx.offsetTime = tx.offsetTime + (endGridlockTime - startGridlockTime)
+                writer.writerow([tx.id, int((tx.offsetTime).microseconds) ]) # write micro
 
 
 def threaded_generate_block(period):            #cmd : fuser -k 8080/tcp
@@ -438,22 +533,30 @@ def threaded_gridlock(period, fee = 0):            #cmd : fuser -k 8080/tcp
 
         # Start Gridlock
         
-        
+        global solutionCounter
+
         starttime = time.time()
         
         while True:
+            startGridlockTime = datetime.now() # Used to remove the time where gridlock is sleeping ...
+
             gridlock() # update active tx queue and keeps only transactions that solves the gridlock
 
             # Create transaction from gridlock solution
             if (len(activeTxQueue.list) == 0):
                 print(" \n No solution found")
             else :
-                print(" \n Solution Found !")
+                print(" \n Solution Found  {}!".format(solutionCounter))
+                solutionCounter += 1
 
-                if fee > 0:
-                    hexEncodedTx = createTransactionFromSolution(fee)
+                if fee == None:
+                    hexEncodedTx = createTransactionFromSolution(startGridlockTime = startGridlockTime) 
+                elif fee > 0:
+                    hexEncodedTx = createTransactionFromSolution(startGridlockTime=startGridlockTime,fee = fee)
                 else:
-                    hexEncodedTx = createTransactionFromSolution() 
+                    print("\n Fee error. Please set a valid fee.")
+
+
 
                 # Send transaction to blockchain
                 sendTransaction(hexEncodedTx)
@@ -463,7 +566,8 @@ def threaded_gridlock(period, fee = 0):            #cmd : fuser -k 8080/tcp
 
             # Move back removed transaction to the active queue. NB : at this point, active queue should still be locked for all the client threads.
             activeTxQueue.list = inactiveTxQueue.list[::-1] # Reverse list to keep the time order
-
+            updateBalanceBack()
+            inactiveTxQueue.list = [] # reset inactiveTx
             # To be implemented : Unlock ressources for client threads
 
             # Execute gridlock again after -period seconds
@@ -471,13 +575,43 @@ def threaded_gridlock(period, fee = 0):            #cmd : fuser -k 8080/tcp
             print(period - ((time.time() - starttime) % period))
             time.sleep(period - ((time.time() - starttime) % period))
         
+def threaded_speed(delay = 5):
+    global txSenderIdOrder
+    global txReceiverIdOrder
 
+    time.sleep(delay) # Delay to let user start nodes
+    # Init bitcoin folders
+    initBitcoinFolder()
+
+    # Create new addresses and send initial balance form oracle # reinitialize accounts
+    initAccountAddressAndBalance()
+
+    while(1):
+        print("[INFO] Generate transactions ... (and store sender/receiver order for Oracle")
+        txSenderIdOrder, txReceiverIdOrder, txData = generateTransactions(10)
+        print("[INFO] Generated {} transactions ".format(len(txSenderIdOrder)))
+        print("[INFO] Sender order ")
+        print(txSenderIdOrder)
+        print("[INFO] Receiver order ")
+        print(txReceiverIdOrder)
+
+
+        time.sleep(0.01)
+        print("Sending transactions ...")
+        for index, data in enumerate(txData):
+            print("[INFO] Waiting tx ....")
+            time.sleep(0.01)
+            print("[INFO] " + txSenderIdOrder[index] + " sends " + str(data['args'][1]) + " to " + txReceiverIdOrder[index])
+            txHash = sendBitcoinCall(data["datadir"], data["conf"], data["method"], data["args"])
+            print("[INFO] txHash : " + txHash)
+        time.sleep(1)
 def threaded_client(connection):
 
     #connection.send(str.encode('Welcome to the Server\n'))
 
     global txCounter
     global txOrder
+    global accounts
 
     while True:
         data = connection.recv(2048) 
@@ -488,8 +622,9 @@ def threaded_client(connection):
 
         # Parse (call bitcoin-cli API gettransaction )
         if (len(data) != 128 and len(data) != 24 and len(data) != 104): # TEST : len 128 -> bitcoin hello
-            print("----- NEW TRANSACTION HAS BEEN DETECTED -----\n")
-            print("Length bytes : {}".format(len(data)))
+            createdAt = datetime.now()
+            print("----- NEW TRANSACTION HAS BEEN DETECTED ----- {}\n".format(createdAt))
+            #print("Length bytes : {}".format(len(data)))
             hexEncodedTx = data.decode('utf-8')
             print("----- Hex Encoded TX -----")
             print(hexEncodedTx)
@@ -498,10 +633,10 @@ def threaded_client(connection):
             subProcessString = subProcessCall.stdout
             dsubProcessCall = subProcessString.decode('utf-8')
 
-            print("\n-----Decoded Hex TX -----")
+            #print("\n-----Decoded Hex TX -----")
             jsonTx = json.loads(dsubProcessCall)
 
-            print(json.dumps(jsonTx))
+            #print(json.dumps(jsonTx))
 
             
 
@@ -513,10 +648,13 @@ def threaded_client(connection):
 
             # Get vIn inputs sum - represent the money (balance) the user is willing to contribute in LSM
             vins = jsonTx["vin"] # raw vins
-            vIn = [
-                {"txid" : vin["txid"],
-                 "vout" : vin["vout"]
-                } for vin in jsonTx["vin"]]
+            if vins != []:
+                vIn = [
+                    {"txid" : vin["txid"],
+                    "vout" : vin["vout"]
+                    } for vin in jsonTx["vin"]]
+            else:
+                vIn = None
 
 
             sumInputs = getSumOfInputs(vIn)
@@ -532,16 +670,18 @@ def threaded_client(connection):
 
             # Retrieve the receiver address
             receiverAddress = jsonTx["vout"][0]["scriptPubKey"]["addresses"][0]
-            print("\n Receiver address : {}".format(receiverAddress))
-            accounts[receiverId]["addresses"].append(receiverAddress) # The first account address will be used as receiver address in the gridlock solution
+            #print("\n Receiver address : {}".format(receiverAddress))
+            if receiverAddress not in accounts[receiverId]["addresses"]:
+                accounts[receiverId]["addresses"].append(receiverAddress) # The first account address will be used as receiver address in the gridlock solution
 
             # Get concatenated hexVins
             hexVins = getHexVins(hexEncodedTx, outValue)
-            print("\n hexVins extraction : {}".format(hexVins))
+            #print("\n hexVins extraction : {}".format(hexVins))
 
             # Create the new transaction 
-            newTx = Transaction(senderId, receiverId, outValue, vins, hexVins)
-
+            newTx = Transaction(senderId, receiverId, outValue, vins, hexVins, createdAt)
+            newTx.queueAt = datetime.now()
+            newTx.offsetTime = newTx.queueAt - newTx.createdAt # Time between transaction receive and transaction queue
             # Add the transaction to the transactions Queue 
             activeTxQueue.push(newTx)  
             printActiveTxQueue()
@@ -569,46 +709,52 @@ def getSumOfInputs(inputs):
     
     amount = 0
     print(" \n ----- Inputs decoding (Get Sum of Inputs) -----")
-    for inp in inputs:
+    if inputs is None:
+        print(" No inputs ...")
+        return amount
+    else:
+        for inp in inputs:
 
-        # getrawtransaction from txid
-        print("getrawtransaction {}".format(inp['txid']))
-        subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "getrawtransaction", inp['txid'] ],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        subProcessString = subProcessCall.stdout
-        dsubProcessCall = subProcessString.decode('utf-8')[:-1] # decoded output, remove the last empty character
+            # getrawtransaction from txid
+            #print("getrawtransaction {}".format(inp['txid']))
+            subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "getrawtransaction", inp['txid'] ],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            subProcessString = subProcessCall.stdout
+            dsubProcessCall = subProcessString.decode('utf-8')[:-1] # decoded output, remove the last empty character
 
-        # Catch errors
-        if(subProcessCall.stderr.decode('utf-8') != ''):
-            print("getrawtransaction : error")
-            break
+            # Catch errors
+            if(subProcessCall.stderr.decode('utf-8') != ''):
+                print("getrawtransaction : error")
+                break
 
-        
-        
+            
+            
 
-        # decoderawtransaction from hex encoded tx
-        print("decoderawtransaction {}".format(dsubProcessCall))
-        subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "decoderawtransaction", dsubProcessCall ],stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        subProcessString = subProcessCall.stdout
-        dsubProcessCall = subProcessString.decode('utf-8') # decoded output
+            # decoderawtransaction from hex encoded tx
+            #print("decoderawtransaction {}".format(dsubProcessCall))
+            subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "decoderawtransaction", dsubProcessCall ],stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subProcessString = subProcessCall.stdout
+            dsubProcessCall = subProcessString.decode('utf-8') # decoded output
 
-        # Catch errors
-        if (subProcessCall.stderr.decode('utf-8') != ''):
-            print("decoderawtransaction : error")
-            break
-
-
-        
-
-        print("Decoded Hex TX")
-        jsonTx = json.loads(dsubProcessCall)
-        print(json.dumps(jsonTx))
-
-        voutIndex = inp['vout']
-        amount += jsonTx['vout'][voutIndex]['value']
+            # Catch errors
+            if (subProcessCall.stderr.decode('utf-8') != ''):
+                print("decoderawtransaction : error")
+                break
 
 
-    print("\n Inputs total Amount : {}".format(amount))
-    return amount
+            
+
+            #print("Decoded Hex TX")
+            jsonTx = json.loads(dsubProcessCall)
+            #print(json.dumps(jsonTx))
+
+            voutIndex = inp['vout']
+            amount += jsonTx['vout'][voutIndex]['value']
+
+
+        print("\n Inputs total Amount : {}".format(amount))
+        return amount
+
+
 
 
 def readCommand():
@@ -616,8 +762,10 @@ def readCommand():
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--fulltest",action='store_true', help="Set the flag to perform a full speed test")
     parser.add_argument("-t", "--test",action='store_true', help="Set the flag to perform a speed test")
+    parser.add_argument("-e", "--endtest",action='store_true', help="Set the flag to perform an  end to end speed test")
     parser.add_argument("-n", "--txNumber", type=int, help="Set the tx number")
     parser.add_argument("-s", "--settxfee",type=float, help="Set the tx fee")
+    parser.add_argument("-d", "--debug",action='store_true', help="Set debug flag") # TODO
     args = vars(parser.parse_args())
     return args
 
@@ -627,8 +775,10 @@ MAX_ADDRESSES = 10
 host = '127.0.0.1'
 port = 8080
 ThreadCount = 0
-gridLockPeriod = 5 # seconds
-blockPeriod = 10 # seconds
+gridLockPeriod = 15 # seconds
+blockPeriod = 20 # seconds
+solutionCounter = 1
+
 
 activeTxQueue = Queue()
 inactiveTxQueue = Queue()
@@ -698,11 +848,26 @@ if __name__=="__main__":
         # start gridlock
         time = timeit.timeit(gridlock, number=1)
         print("Gridlock execution time : {} s".format(time))
-        
+                
     # REAL ORACLE SERVER
     else:
         try:
+            
             ServerSocket.bind((host, port))
+
+            # End to end test
+            if args["endtest"]:
+                # Initialize csv file with column names
+                """
+                with open('solving_speed.csv', 'w') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["transaction ID","Solved time (ms)"] )
+                
+                """
+
+                # speed thread
+                start_new_thread(threaded_speed,(5,))
+
         except socket.error as e:
             print(str(e))
             raise SystemExit
@@ -716,6 +881,7 @@ if __name__=="__main__":
         # Start gridlock thread
         start_new_thread(threaded_gridlock,(gridLockPeriod,args["settxfee"],))
 
+        
         # Listen for connection
         while True:
             Client, address = ServerSocket.accept()
