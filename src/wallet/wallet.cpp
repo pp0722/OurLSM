@@ -7,6 +7,11 @@
 
 #include "base58.h"
 #include "checkpoints.h"
+// Oracle imports
+#include "core_io.h"
+#include "rpc/server.h"
+//
+
 #include "chain.h"
 #include "wallet/coincontrol.h"
 #include "consensus/consensus.h"
@@ -2528,6 +2533,22 @@ bool CWallet::SelectCoins(const std::vector<COutput>& vAvailableCoins, const CAm
     return res;
 }
 
+
+bool CWallet::SelectAllCoins(const std::vector<COutput>& vAvailableCoins, const CAmount& nTargetValue, std::set<CInputCoin>& setCoinsRet, CAmount& nValueRet, const CCoinControl* coinControl) const
+{
+    std::vector<COutput> vCoins(vAvailableCoins);
+
+    for (const COutput& out : vCoins)
+    {
+        if (!out.fSpendable)
+                continue;
+        nValueRet += out.tx->tx->vout[out.i].nValue;
+        setCoinsRet.insert(CInputCoin(out.tx, out.i));
+    }
+    return (nValueRet < nTargetValue);
+
+}
+
 bool CWallet::SignTransaction(CMutableTransaction &tx)
 {
     AssertLockHeld(cs_wallet); // mapWallet
@@ -2980,6 +3001,194 @@ bool CWallet::CreateTransaction(const std::vector<CRecipient>& vecSend, CWalletT
     return true;
 }
 
+
+
+bool CWallet::CreateTransactionLSM(const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, CAmount& nFeeRet,
+                                int& nChangePosInOut, std::string& strFailReason, const CCoinControl& coin_control, bool sign, const Contract *contract,
+                                bool allowDust)
+{
+    CAmount nValue = 0;
+
+    for (const auto& recipient : vecSend)
+    {
+        if (nValue < 0 || recipient.nAmount < 0)
+        {
+            strFailReason = _("Transaction amounts must not be negative");
+            return false;
+        }
+        nValue += recipient.nAmount;
+
+
+    }
+    if (vecSend.empty())
+    {
+        strFailReason = _("Transaction must have at least one recipient");
+        return false;
+    }
+
+    wtxNew.fTimeReceivedIsTxTime = true;
+    wtxNew.BindWallet(this);
+    CMutableTransaction txNew;
+
+    // Discourage fee sniping.
+    //
+    // For a large miner the value of the transactions in the best block and
+    // the mempool can exceed the cost of deliberately attempting to mine two
+    // blocks to orphan the current best block. By setting nLockTime such that
+    // only the next block can include the transaction, we discourage this
+    // practice as the height restricted and limited blocksize gives miners
+    // considering fee sniping fewer options for pulling off this attack.
+    //
+    // A simple way to think about this is from the wallet's point of view we
+    // always want the blockchain to move forward. By setting nLockTime this
+    // way we're basically making the statement that we only want this
+    // transaction to appear in the next block; we don't want to potentially
+    // encourage reorgs by allowing transactions to appear at lower heights
+    // than the next block in forks of the best chain.
+    //
+    // Of course, the subsidy is high enough, and transaction volume low
+    // enough, that fee sniping isn't a problem yet, but by implementing a fix
+    // now we ensure code won't be written that makes assumptions about
+    // nLockTime that preclude a fix later.
+    txNew.nLockTime = chainActive.Height();
+
+    // Secondly occasionally randomly pick a nLockTime even further back, so
+    // that transactions that are delayed after signing for whatever reason,
+    // e.g. high-latency mix networks and some CoinJoin implementations, have
+    // better privacy.
+    if (GetRandInt(10) == 0)
+        txNew.nLockTime = std::max(0, (int)txNew.nLockTime - GetRandInt(100));
+
+    assert(txNew.nLockTime <= (unsigned int)chainActive.Height());
+    assert(txNew.nLockTime < LOCKTIME_THRESHOLD);
+
+    // If the transaction interacts with smart contracts, fill the related field.
+    if (contract != NULL) txNew.contract = *contract;
+
+    unsigned int nBytes;
+    {
+        std::set<CInputCoin> setCoins;
+        LOCK2(cs_main, cs_wallet);
+        {
+            std::vector<COutput> vAvailableCoins;
+            AvailableCoins(vAvailableCoins, true, &coin_control);
+
+            bool pick_new_inputs = true;
+            CAmount nValueIn = 0;
+            
+            txNew.vin.clear();
+            txNew.vout.clear();
+            wtxNew.fFromMe = true;
+
+            CAmount nValueToSelect = nValue;
+
+            // vouts to the payees
+            for (const auto& recipient : vecSend)
+            {
+                CTxOut txout(recipient.nAmount, recipient.scriptPubKey);
+
+
+                txNew.vout.push_back(txout);
+            }
+
+            // Choose coins to use
+            if (pick_new_inputs) {
+                nValueIn = 0;
+                setCoins.clear();
+                if (!SelectAllCoins(vAvailableCoins, nValueToSelect, setCoins, nValueIn, &coin_control))
+                {
+                    //strFailReason = _("Insufficient funds");
+                    return false;
+                }
+            }
+            
+
+            // Fill vin
+            //
+            // Note how the sequence number is set to non-maxint so that
+            // the nLockTime set above actually works.
+            //
+            // BIP125 defines opt-in RBF as any nSequence < maxint-1, so
+            // we use the highest possible value in that range (maxint-2)
+            // to avoid conflicting with other possible uses of nSequence,
+            // and in the spirit of "smallest possible change from prior
+            // behavior."
+
+            const uint32_t nSequence = coin_control.signalRbf ? MAX_BIP125_RBF_SEQUENCE : (CTxIn::SEQUENCE_FINAL - 1);
+            for (const auto& coin : setCoins)
+                txNew.vin.push_back(CTxIn(coin.outpoint,CScript(),
+                                            nSequence));
+
+
+                
+                
+            
+        }
+
+        
+
+
+
+        if (nChangePosInOut == -1) reservekey.ReturnKey(); // Return any reserved key if we don't have change
+
+        if (sign)
+        {
+            CTransaction txNewConst(txNew);
+            int nIn = 0;
+            int nHashType = SIGHASH_NONE|SIGHASH_ANYONECANPAY;
+
+            for (const auto& coin : setCoins)
+            {
+                const CScript& scriptPubKey = coin.txout.scriptPubKey;
+                SignatureData sigdata;
+
+                if (!ProduceSignature(TransactionSignatureCreator(this, &txNewConst, nIn, coin.txout.nValue, nHashType), scriptPubKey, sigdata))
+                {
+                    strFailReason = _("Signing transaction failed");
+                    return false;
+                } else {
+                    UpdateTransaction(txNew, nIn, sigdata);
+                }
+
+                nIn++;
+            }
+        }
+
+        // Embed the constructed transaction data in wtxNew.
+        if( txNew.contract.action == 1 )
+            txNew.contract.address = txNew.GetHash();
+        wtxNew.SetTx(MakeTransactionRef(std::move(txNew)));
+
+        // Limit size
+        if (GetTransactionWeight(wtxNew) >= MAX_STANDARD_TX_WEIGHT)
+        {
+            strFailReason = _("Transaction too large");
+            return false;
+        }
+    }
+
+    
+    /*
+    if (gArgs.GetBoolArg("-walletrejectlongchains", DEFAULT_WALLET_REJECT_LONG_CHAINS)) {
+        // Lastly, ensure this tx will pass the mempool's chain limits
+        LockPoints lp;
+        CTxMemPoolEntry entry(wtxNew.tx, 0, 0, 0, false, 0, lp);
+        CTxMemPool::setEntries setAncestors;
+        size_t nLimitAncestors = gArgs.GetArg("-limitancestorcount", DEFAULT_ANCESTOR_LIMIT);
+        size_t nLimitAncestorSize = gArgs.GetArg("-limitancestorsize", DEFAULT_ANCESTOR_SIZE_LIMIT)*1000;
+        size_t nLimitDescendants = gArgs.GetArg("-limitdescendantcount", DEFAULT_DESCENDANT_LIMIT);
+        size_t nLimitDescendantSize = gArgs.GetArg("-limitdescendantsize", DEFAULT_DESCENDANT_SIZE_LIMIT)*1000;
+        std::string errString;
+        if (!mempool.CalculateMemPoolAncestors(entry, setAncestors, nLimitAncestors, nLimitAncestorSize, nLimitDescendants, nLimitDescendantSize, errString)) {
+            strFailReason = _("Transaction has too long of a mempool chain");
+            return false;
+        }
+    }*/
+
+
+    return true;
+}
+
 /**
  * Call after CreateTransaction unless you want to abort
  */
@@ -3018,9 +3227,93 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey, CCon
                 wtxNew.RelayWalletTransaction(connman);
             }
         }
+
+        // TEST ON NORMAL TX - to be removed
+        // Send message to oracle
+       
+       if(connman)
+       {
+           std::string strNode = "127.0.0.1:8080";
+           if(CNode* oracleNode = connman->FindNode(strNode)){
+               char *hello = "Hello from BITCOIN"; 
+               send(oracleNode->hSocket, hello, sizeof(hello),0);
+           };
+           
+
+       }
     }
     return true;
 }
+
+/**
+ * Call after CreateTransaction unless you want to abort
+ */
+bool CWallet::CommitTransactionLSM(CWalletTx& wtxNew, CReserveKey& reservekey, CConnman* connman, CValidationState& state)
+{
+    {
+        LOCK2(cs_main, cs_wallet);
+        LogPrintf("CommitTransaction:\n%s", wtxNew.tx->ToString());
+        {
+            // Take key pair from key pool so it won't be used again
+            reservekey.KeepKey();
+
+            // Add tx to wallet, because if it has change it's also ours,
+            // otherwise just for transaction history.
+            AddToWallet(wtxNew);
+
+            // Notify that old coins are spent
+            //TODO spent or not ?
+            /*
+            for (const CTxIn& txin : wtxNew.tx->vin)
+            {
+                CWalletTx &coin = mapWallet[txin.prevout.hash];
+                coin.BindWallet(this);
+                NotifyTransactionChanged(this, coin.GetHash(), CT_UPDATED);
+            }
+            */
+        }
+
+        // Track how many getdata requests our transaction gets
+        mapRequestCount[wtxNew.GetHash()] = 0;
+
+        // NO BROADCAST
+        /*
+        if (fBroadcastTransactions)
+        {
+            // Broadcast
+            if (!wtxNew.AcceptToMemoryPool(maxTxFee, state)) {
+                LogPrintf("CommitTransaction(): Transaction cannot be broadcast immediately, %s\n", state.GetRejectReason());
+                // TODO: if we expect the failure to be long term or permanent, instead delete wtx from the wallet and return failure.
+            } else {
+                wtxNew.RelayWalletTransaction(connman);
+            }
+        }
+        */
+
+       // Send message to oracle
+       
+       if(connman)
+       {
+           std::string strNode = "127.0.0.1:8080";
+           if(CNode* oracleNode = connman->FindNode(strNode)){
+               char *hello = "Hello from BITCOIN";
+                // Hex tx Hash can't be unserialized by Oracle
+                //std::string hexSerializedTx = wtxNew.GetHash().GetHex();
+                std::string strHex = EncodeHexTx(static_cast<CTransaction>(wtxNew), RPCSerializationFlags());
+                const char *buffer = strHex.c_str();
+
+               send(oracleNode->hSocket, buffer, strlen(buffer),0);
+
+
+           };
+           
+
+       }
+
+    }
+    return true;
+}
+
 
 void CWallet::ListAccountCreditDebit(const std::string& strAccount, std::list<CAccountingEntry>& entries) {
     CWalletDB walletdb(*dbw);

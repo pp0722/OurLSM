@@ -294,6 +294,8 @@ public:
     unsigned int GetReceiveFloodSize() const;
 
     void WakeMessageHandler();
+
+    CNode* FindNode(const std::string& addrName);
 private:
     struct ListenSocket {
         SOCKET socket;
@@ -318,7 +320,7 @@ private:
 
     CNode* FindNode(const CNetAddr& ip);
     CNode* FindNode(const CSubNet& subNet);
-    CNode* FindNode(const std::string& addrName);
+    //CNode* FindNode(const std::string& addrName);
     CNode* FindNode(const CService& addr);
 
     bool AttemptToEvictConnection();

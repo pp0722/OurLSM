@@ -1172,7 +1172,7 @@ inline void static SendBlockTransactions(const CBlock& block, const BlockTransac
     connman.PushMessage(pfrom, msgMaker.Make(nSendFlags, NetMsgType::BLOCKTXN, resp));
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman& connman, const std::atomic<bool>& interruptMsgProc)
+bool static ProcessMessage_tmp(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman& connman, const std::atomic<bool>& interruptMsgProc)
 {
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
@@ -1806,13 +1806,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         mapAlreadyAskedFor.erase(inv.hash);
 
         std::list<CTransactionRef> lRemovedTxn;
-
+        LogPrintf("ProcessTxStart time: 0 from peer= %d\n", pfrom->GetId());
         if (!AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, ptx, true, &fMissingInputs, &lRemovedTxn)) {
+
+            struct timeval start;
+			struct timeval end;
+			unsigned long diff;
+			gettimeofday(&start, NULL);
+
             mempool.check(pcoinsTip);
             RelayTransaction(tx, connman);
             for (unsigned int i = 0; i < tx.vout.size(); i++) {
                 vWorkQueue.emplace_back(inv.hash, i);
             }
+            gettimeofday(&end, NULL);
+			diff = 1000000 * (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+			LogPrintf("MempoolCheck   time: %ld from peer= %d\n", diff, pfrom->GetId());
 
             pfrom->nLastTXTime = GetTime();
 
@@ -2131,10 +2140,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         } // cs_main
 
         if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
+            return ProcessMessage_tmp(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
 
         if (fRevertToHeaderProcessing)
-            return ProcessMessage(pfrom, NetMsgType::HEADERS, vHeadersMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
+            return ProcessMessage_tmp(pfrom, NetMsgType::HEADERS, vHeadersMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
 
         if (fBlockReconstructed) {
             // If we got here, we were able to optimistically reconstruct a
@@ -2628,6 +2637,24 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     return true;
 }
+
+
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman& connman, const std::atomic<bool>& interruptMsgProc){
+	bool res;
+	struct timeval start;
+	struct timeval end;
+	unsigned long diff;
+	gettimeofday(&start, NULL);
+
+	res = ProcessMessage_tmp(pfrom, strCommand, vRecv, nTimeReceived, chainparams, connman, interruptMsgProc);	
+	
+	gettimeofday(&end, NULL);
+	diff = 1000000 * (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+	LogPrintf("ProcessMessage time: %ld from peer= %d\n", diff, pfrom->GetId());
+
+	return res;
+}
+
 
 static bool SendRejectsAndCheckIfBanned(CNode* pnode, CConnman& connman)
 {
