@@ -19,7 +19,6 @@ typedef struct Account {
     char address[MAX_ADDRESS_SIZE];
     int balance;
     int netBalance; // Net balance used during GridLock Resolution
-    // TODO :  add list of pending tx ?
 } Account;
 
 typedef struct OffsetTx {
@@ -48,7 +47,6 @@ typedef struct state {
     unsigned int size_contract; 
     unsigned int tempCounter ;
     unsigned int num_account;
-    // TODO : number of elements in queue not needed (->SIZE attribute)
     unsigned int num_active_queue;
     //unsgined int allocated_active_tx_queue_size;
     unsigned int num_inactive_queue;
@@ -71,19 +69,21 @@ int setBalanceAndNetBalance(char *address, int amount);
     // OffsetTx prototypes
 int createOffsetTx(char *senderAddress, char *receiverAddress, int amount);
 void printOffsetTx(OffsetTx tx);
-
+void printReturnOffsetTx(OffsetTx tx);
     // Queues prototypes
 static void initQueue(unsigned capacity);
+void resetQueue(Queue *queue,unsigned capacity);
 void enqueue(Queue *queue, OffsetTx tx);
 OffsetTx *dequeue(Queue *queue);
 OffsetTx removeLatestTx(Queue * queue, char *address);
 void toInactiveQueue(int index);
-void reOrderQueue(Queue *queue);
+void toActiveQueue();
 int isFull(Queue *queue);
 int isEmpty(Queue *queue);
 OffsetTx *getRear(Queue *queue);
 OffsetTx *getFront(Queue *queue);
 void printQueue(Queue *queue);
+void printReturnQueue(Queue *queue);
 
     // Account Queue
 static void initAccountQ(unsigned accountsCapacity);
@@ -102,8 +102,8 @@ void updateBalance();
 Account *accounts;
 int _account;
 Queue *activeQueue;
-AccountQ *accountQueue;
 Queue *inactiveQueue;
+AccountQ *accountQueue;
 ContractState theContractState;
 
 
@@ -131,7 +131,7 @@ static unsigned int compute_contract_size();
 // Contract debug/utils prototypes
 static int too_few_args()
 {
-    err_printf("[CONTRACT INFO] too few args\n");
+    err_printf("[CONTRACT] too few args\n");
     return -1;
 }
 
@@ -148,13 +148,14 @@ int contract_main(int argc, char** argv)
 
     if(!strcmp(argv[1], "init"))
     {
-        // TODO : save contract owner (Oracle address)
-        err_printf("[CONTRACT INFO] Init contract\n");
+        // TODO : Save contract owner address (Oracle address) for future authorization
+
+        err_printf("[CONTRACT] Init contract\n");
         initAccounts();
         initQueue(MAX_QUEUE_CAPACITY);    
         initAccountQ(MAX_ACCOUNTS);
         theContractState.size_contract = compute_contract_size();
-        theContractState.tempCounter = 0;
+        theContractState.tempCounter = 1;
         printAccounts();
 
         writeState();
@@ -169,6 +170,9 @@ int contract_main(int argc, char** argv)
         else if(!strcmp(argv[1], "activequeue")) {
             printQueue(activeQueue);
         }
+        else if(!strcmp(argv[1], "inactivequeue")) {
+            printQueue(inactiveQueue);
+        }
         else if(!strcmp(argv[1], "accountqueue")){
             printAccountQ();
         }
@@ -176,20 +180,20 @@ int contract_main(int argc, char** argv)
             if (argc < 4) {
                 return too_few_args();
             }
-            err_printf("[CONTRACT INFO] set balance : %d\n", setBalanceAndNetBalance(argv[2], atoi(argv[3])));
+            err_printf("[CONTRACT] set balance : %d\n", setBalanceAndNetBalance(argv[2], atoi(argv[3])));
         }
         else if(!strcmp(argv[1], "transfer"))
         {
             if (argc < 5){
                return too_few_args();
             }
-            err_printf("[CONTRACT INFO] transfer : %d\n", transfer(argv[2], argv[3], atoi(argv[4])));
+            err_printf("[CONTRACT] transfer : %d\n", transfer(argv[2], argv[3], atoi(argv[4])));
         }
         else if (!strcmp(argv[1], "gridlock")){
-            startGridLock();
+            startGridLock();    
         }
         else {
-            err_printf("[CONTRACT INFO] error : command not found : %s\n", argv[1]);
+            err_printf("[CONTRACT] error : command not found : %s\n", argv[1]);
             return 0;
         }
         // if case 2 (remove TX )
@@ -231,7 +235,7 @@ static void initAccounts(){
     */
 
 
-   // Test case with python tool. Initialize balance and net balance to 0. Whenever users send their inputs (in real tx) to Oracle, Oracle will cal the smart contract to update their balance.
+   // Test case with python tool. Initialize balance and net balance to 0. Whenever users send their inputs (in real tx) to Oracle, Oracle will call the smart contract to update their balance.
     accounts[0] = createAccount("A", 0, 0);
     accounts[1] = createAccount("B", 0, 0); 
     accounts[2] = createAccount("C", 0, 0);
@@ -255,7 +259,7 @@ static Account createAccount(char* address, int balance, int netBalance)
 
 void printAccounts()
 {
-    err_printf("[CONTRACT INFO] ACCOUNTS BALANCE STATES : \n");
+    err_printf("[CONTRACT] ACCOUNTS BALANCE STATES : \n");
     for(int i = 0 ; i < theContractState.num_account ; i++)
     {
         
@@ -286,13 +290,13 @@ int getNetBalance(char *address)
     {
         if (!strcmp(accounts[i].address,address))
         {
-            err_printf("[CONTRACT INFO] Get net balance call : \n");
+            err_printf("[CONTRACT] Get net balance call : \n");
             printAccount(accounts[i]);
             
             return accounts[i].netBalance;
         }
     }
-    err_printf("[CONTRACT INFO] Address does not exist\n");
+    err_printf("[CONTRACT] Address does not exist\n");
     return -1;
 }
 
@@ -303,12 +307,12 @@ int setBalanceAndNetBalance(char *address, int amount)
     
     Account *account = findAccount(address);
     if(account == NULL){
-        err_printf("[CONTRACT INFO] Sender Account not found : %s\n", address);
+        err_printf("[CONTRACT] Sender Account not found : %s\n", address);
         return -1;
     }
     account->balance += amount;
     account->netBalance += amount;
-    err_printf("[CONTRACT INFO] %s balance and net balance set to %d\n", address, amount);
+    err_printf("[CONTRACT] %s balance and net balance set to %d\n", address, amount);
     return 0;
 }
 
@@ -318,19 +322,19 @@ int createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
 {
     
     if (amount <= 0 ) {
-        err_printf("[CONTRACT INFO] Amount must be strictly positive \n");
+        err_printf("[CONTRACT] Amount must be strictly positive \n");
         return -1;
     };
 
     Account *sender = findAccount(senderAddress);
     if(sender == NULL){
-        err_printf("[CONTRACT INFO] Sender Account not found : %s\n", senderAddress);
+        err_printf("[CONTRACT] Sender Account not found : %s\n", senderAddress);
         return -1;
     }
 
     Account *receiver = findAccount(receiverAddress);
     if(receiver == NULL){
-        err_printf("[CONTRACT INFO] Receiver Account not found : %s\n", senderAddress);
+        err_printf("[CONTRACT] Receiver Account not found : %s\n", senderAddress);
         return -1;
     }
 
@@ -357,9 +361,23 @@ int createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
     return 0;
 }
 
+
+// Display a transaction information : id, senderAddress, receiverAddress, amount
 void printOffsetTx(OffsetTx tx)
 {
-    err_printf("tx  : %d, address : %s, balance :  %s, netBalance %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    err_printf("tx  : %d, sender : %s, receiver :  %s, amount %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    
+}
+
+// Display a transaction information : id, senderAddress, receiverAddress, amount
+// And use STDOUT to retrieve by calling the contract in another process (oracleContract.py)
+void printReturnOffsetTx(OffsetTx tx)
+{
+    err_printf("tx  : %d, sender : %s, receiver :  %s, amount %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    
+    // output the solution in stdout (will be captured by main python script oracleContract.py)
+    // NB : err_printf seems to flush STDOUT right away 
+    printf("%d,%s,%s,%d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
 }
 
 static void initQueue(unsigned capacity){
@@ -377,6 +395,14 @@ static void initQueue(unsigned capacity){
     //queue->transactions = (OffsetTx*) malloc(sizeof(capacity * sizeof(OffsetTx)));
 }
 
+void resetQueue(Queue *queue, unsigned  capacity)
+{
+    err_printf("[CONTRACT] INACTIVE QUEUE RESET \n");
+    queue->size = 0;
+    queue->front = 0;
+    queue->rear = capacity - 1;
+
+}
 
 void enqueue(Queue *queue,OffsetTx tx){
     if(isFull(queue)) return;
@@ -384,7 +410,7 @@ void enqueue(Queue *queue,OffsetTx tx){
     queue->rear = (queue->rear + 1 ) % queue->capacity;
     queue->transactions[queue->rear] = tx;
     queue->size++;
-    err_printf("[CONTRACT INFO] Enqueued TX  : ");
+    err_printf("[CONTRACT] Enqueued TX  : ");
     printOffsetTx(tx);
 }
 
@@ -394,7 +420,7 @@ OffsetTx *dequeue(Queue *queue ){
     OffsetTx *tx = & (queue->transactions[queue->front]);
     queue->front = (queue->front + 1 ) % queue->capacity;
     queue->size--;
-    err_printf("[CONTRACT INFO] Dequeued TX  : ");
+    err_printf("[CONTRACT] Dequeued TX  : ");
     printOffsetTx(*tx);
     return tx;
    
@@ -410,8 +436,8 @@ OffsetTx removeLatestTx(Queue *queue, char *address)
     int txIndex;
 
     // From rear to front queue (latest to oldest)
-    err_printf("[CONTRACT INFO] ACTIVE QUEUE STATE :\n");
-    printQueue(queue);
+    //err_printf("[CONTRACT] ACTIVE QUEUE STATE :\n");
+    //printQueue(queue);
 
     for(int i = queue->rear ; i > queue->front - 1 ; i-- )
     {   
@@ -429,24 +455,28 @@ OffsetTx removeLatestTx(Queue *queue, char *address)
         }
 
     }
-    err_printf("[CONTRACT INFO] REMOVED TX : \n");
+    err_printf("[CONTRACT] REMOVED TX : \n");
     printOffsetTx(tx);
-
     toInactiveQueue(txIndex);
 
+    // Update the sender/receiver balance with the removed tx
     senderAccount = findAccount(tx.senderAddress);
     senderAccount->netBalance += tx.amount;
     receiverAccount = findAccount(tx.receiverAddress);
     receiverAccount->netBalance -= tx.amount;
+    // Enqueue the receiver in the account queue as its balance decreased
     enqueueAccountQ(receiverAccount->address);
 
     
     return tx;
 }
 
+// Insert in inactive queue a transaction by its index
 void toInactiveQueue(int index){
 
     enqueue(inactiveQueue, activeQueue->transactions[index]);
+
+    // Remove the transaction from active queue by index
     for(int i = index ; i < activeQueue->rear   ; i++ )
     {
         activeQueue->transactions[i] = activeQueue->transactions[i+1];
@@ -455,10 +485,62 @@ void toInactiveQueue(int index){
     activeQueue->size--;
 }
 
-// The inactive queue is initially unordered because removed TX are not queued in order.
-void reOrderQueue(Queue *queue)
+// Insert ALL transactions from the inactive queue to the active queue (called after right after gridlock)
+// Update the net balance form the pushed transactions
+// Reset inactive queue
+void toActiveQueue()
 {
-    // TODO
+    err_printf("[CONTRACT] PUSH BACK TX inactiveQueue to activeQueue\n");
+    //memcpy(inactiveQueue, activeQueue, sizeof(Queue));
+    
+    activeQueue->rear = inactiveQueue->rear;
+    activeQueue-> front = inactiveQueue->front;
+    activeQueue->size = inactiveQueue->size;
+
+    
+    // Reorder 
+    // Get minimum index (Queue structure is a circular queue. front and rear attributes can be both min or max index)
+    int minIndex, maxIndex;
+    if (inactiveQueue->front > inactiveQueue->rear)
+    {
+        minIndex = inactiveQueue->rear;
+        maxIndex = inactiveQueue->front;
+    }
+    else{
+        minIndex = inactiveQueue->front;
+        maxIndex = inactiveQueue->rear;
+    }
+    
+    OffsetTx tx;
+    Account* senderAccount;
+    Account* receiverAccount;
+    for(int i = minIndex ; i < maxIndex + 1 ; i++){
+        // Insert inactive queue tx back in active queue
+        tx = inactiveQueue->transactions[maxIndex + minIndex - i];
+        activeQueue->transactions[i] = tx;
+        // Update balance back (NB : transactions already in the queue therefore no need to enqueue it)
+        senderAccount = findAccount(tx.senderAddress);
+        if (senderAccount == NULL) {
+            err_printf("[CONTRACT] %s account not found\n", tx.senderAddress);
+        }
+
+        receiverAccount = findAccount(tx.receiverAddress);
+        if (receiverAccount == NULL) {
+            err_printf("[CONTRACT] %s account not found\n", tx.receiverAddress);
+        }
+
+        senderAccount->netBalance -= tx.amount;
+        receiverAccount->netBalance += tx.amount;
+
+        if( !isInAccountQ(senderAccount->address)){
+            enqueueAccountQ(senderAccount->address);
+        }
+    }
+    
+    // Reset inactive queue
+    resetQueue(inactiveQueue, MAX_QUEUE_CAPACITY);
+    
+
 }
 
 int isFull(Queue *queue){
@@ -485,13 +567,23 @@ OffsetTx *getFront(Queue *queue){
 
 
 void printQueue(Queue *queue){
-    if (isEmpty(queue)) {err_printf("[CONTRACT INFO] The queue is empty.\n");return;}
-    err_printf("[CONTRACT INFO] QUEUE STATE : \n");
+    if (isEmpty(queue)) {err_printf("[CONTRACT] The queue is empty.\n");return;}
+    err_printf("[CONTRACT] QUEUE STATE : \n");
     for (int i = queue->front ; i < queue->rear + 1 ; i++)
     {
-        printOffsetTx( (queue->transactions)[i] );
+        printOffsetTx( (queue->transactions)[i]);
     }
 }
+
+void printReturnQueue(Queue *queue){
+    if (isEmpty(queue)) {err_printf("[CONTRACT] The queue is empty.\n");return;}
+    err_printf("[CONTRACT] QUEUE STATE : \n");
+    for (int i = queue->front ; i < queue->rear + 1 ; i++)
+    {
+        printReturnOffsetTx( (queue->transactions)[i]);
+    }
+}
+
 
 
 static void initAccountQ(unsigned accountsCapacity){
@@ -512,7 +604,7 @@ void enqueueAccountQ(char *address)
 
     strcpy(accountQueue->addresses[accountQueue->rear], address) ;
     accountQueue->size++;
-    err_printf("[CONTRACT INFO] Enqueued account : ");
+    err_printf("[CONTRACT] Enqueued account : ");
     err_printf("%s\n", accountQueue->addresses[accountQueue->rear]);
 }
 char *dequeueAccountQ()
@@ -521,7 +613,7 @@ char *dequeueAccountQ()
     char *address = accountQueue->addresses[accountQueue->front];
     accountQueue->front = (accountQueue->front + 1 ) % accountQueue->capacity;
     accountQueue->size--;
-    err_printf("[CONTRACT INFO] Dequeued account : ");
+    err_printf("[CONTRACT] Dequeued account : ");
     err_printf("%s\n", address );
     return address;
 }
@@ -547,8 +639,8 @@ int isInAccountQ(char *address){
 
 
 void printAccountQ(){
-    if (isEmptyAccountQ()) {err_printf("[CONTRACT INFO] The account queue is empty.\n");return;}
-    err_printf("[CONTRACT INFO] ACCOUNT QUEUE STATE : \n");
+    if (isEmptyAccountQ()) {err_printf("[CONTRACT] The account queue is empty.\n");return;}
+    err_printf("[CONTRACT] ACCOUNT QUEUE STATE : \n");
     for (int i = accountQueue->front ; i < accountQueue->rear + 1 ; i++)
     {
         err_printf("%s\n", accountQueue->addresses[i]);
@@ -560,48 +652,58 @@ void printAccountQ(){
 void startGridLock()
 {   
     char *currentAddress;
-    //OffsetTx removedTx;
-    err_printf("[CONTRACT INFO] Gridlock starting ... ------------------------------- \n");
+    err_printf("[CONTRACT] Gridlock starting ... ------------------------------- \n");
     while( accountQueue->size > 0)
     {
         currentAddress = dequeueAccountQ();
 
         
-        if (getNetBalance(currentAddress) >= 0) continue;
+        if (getNetBalance(currentAddress) >= 0) 
+            continue;
 
         while (getNetBalance(currentAddress) < 0) 
-        {
             removeLatestTx(activeQueue, currentAddress);
-            
-        }
-        
+
     }
 
     // Update balance
-    if (isEmpty(activeQueue))
-        updateBalance();
-    else
-        err_printf("[CONTRACT INFO] NO SOLUTION FOUND\n");
-    
-    err_printf("[CONTRACT INFO] Gridlock has ended ... -------------------------------\n");
-    err_printf("[CONTRACT INFO] ACTIVE QUEUE\n");
-    printQueue(activeQueue);
-    err_printf("[CONTRACT INFO] INACTIVE QUEUE\n"); 
-    printQueue(inactiveQueue);
-    printAccounts();
+    if (!isEmpty(activeQueue))
+    {
+        err_printf("[CONTRACT] ACTIVE QUEUE\n");
+        printReturnQueue(activeQueue);
+        err_printf("[CONTRACT] INACTIVE QUEUE\n"); 
+        printQueue(inactiveQueue);
 
-    // TODO : - inactive queue state should be ordered
-    //        - tranfer Inactive TX to active queue
+        updateBalance();
+                
+    }
+    else
+        err_printf("[CONTRACT] NO SOLUTION FOUND\n");
+    
+    
+    err_printf("[CONTRACT] Gridlock has ended ... -------------------------------\n");
+    printAccounts();
+    if (inactiveQueue->size > 0)
+    {
+        toActiveQueue();
+        printAccounts();
+    }
 }
 
+// Reset balance and net balance from remaining accounts in the solution
 void updateBalance()
-
 {
-    //err_printf("UPDATE BALANCE\n");
-    for (int i = 0 ; i < theContractState.num_account ; i++)
-    {   
-        accounts[i].balance = accounts[i].netBalance;
-    }
+    err_printf("[CONTRACT] SOLUTION FOUND. UPDATING THE BALANCE ...\n");
+
+   Account *activeAccount;
+   for (int i = activeQueue->front ; i < activeQueue->rear + 1 ; i++)
+   {
+       activeAccount = findAccount( (activeQueue->transactions[i]).senderAddress );
+       activeAccount->balance = 0;
+       activeAccount->netBalance = 0;
+   }
+
+    resetQueue(activeQueue, MAX_QUEUE_CAPACITY);
 }
 
 // Contract call functions
@@ -631,12 +733,12 @@ int transfer(char* senderAddress, char* receiverAddress ,int amount)
         return 0;
     }
 
-    err_printf("[CONTRACT INFO] insufficient funds\n");
+    err_printf("[CONTRACT] insufficient funds\n");
     int res = createOffsetTx(senderAddress,receiverAddress,amount);
     return res;
 }
 
-// Contract State Read / Write
+// ------------------Contract State Read / Write
 
 static unsigned int readState(){
     /*

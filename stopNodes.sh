@@ -1,6 +1,10 @@
 #!/bin/bash
 #lsof -i -P -n | grep bitcoin
 
+# Stop Oracle python server
+echo Oracle python server killing ...  
+fuser -k 8080/tcp
+
 # Stop User Node
 bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf stop
 
@@ -16,10 +20,12 @@ bitcoin-cli -regtest -datadir=/home/david/.bitcoinE -conf=/home/david/.bitcoinE/
 bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf stop
 
 # Clean data, remove generated blocks
-echo Bitcoin regtest folders cleaned 
+echo Bitcoin regtest folders cleaning ... 
 rm -rf ~/.bitcoin/regtest
 rm -rf ~/.bitcoinB/regtest
 rm -rf ~/.bitcoinC/regtest
 rm -rf ~/.bitcoinD/regtest
 rm -rf ~/.bitcoinE/regtest
 rm -rf ~/.bitcoinOracle/regtest
+
+echo STOP DONE
