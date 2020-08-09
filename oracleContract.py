@@ -59,52 +59,20 @@ class CODE:
 
 
 
-def initAccounts(case=None):
-    if case is None:
-        accountsDict = dict()
-        idList = ["A","B","C","D","E"]
-        for id_ in idList:
-            accountsDict[id_] = {
-                "balance" : 0,
-                "netBalance" : 0,
-                "addresses" : []
-            }
-    elif case=="ubin":
-        accountsDict = dict()
-        idList = ["A","B","C","D","E"]
-        
-        accountsDict["A"] = {
-            "balance" : 3,
-            "netBalance" : 3,
-            "addresses" : ["addressA"]
-        }
-
-        accountsDict["B"] = {
-            "balance" : 4,
-            "netBalance" : 4,
-            "addresses" : ["addressB"]
-        }
-
-        accountsDict["C"] = {
-            "balance" : 5,
-            "netBalance" : 5,
-            "addresses" : ["addressC"]
-        }
-
-        accountsDict["D"] = {
-            "balance" : 4,
-            "netBalance" : 4,
-            "addresses" : ["addressD"]
-        }
-
-        accountsDict["E"] = {
-            "balance" : 3,
-            "netBalance" : 3,
-            "addresses" : ["addressE"]
+def initAccounts():
+    
+    accountsDict = dict()
+    idList = ["A","B","C","D","E"]
+    for id_ in idList:
+        accountsDict[id_] = {
+            "balance" : 0,
+            "netBalance" : 0,
+            "addresses" : []
         }
 
     return accountsDict
 
+"""
 def initTx(case="ubin", txNumber=0):
     activeTxQueue.list = []
     if case=="ubin": #ubin phase case
@@ -145,6 +113,8 @@ def createTransactionAndUpdate(senderId,receiverId,outValue, vins, hexVins):
     # Update the net balance from the transaction output
     accounts[senderId]["netBalance"] -= outValue
     accounts[receiverId]["netBalance"] += outValue
+
+"""
 
 def printAccounts():
     global accounts
@@ -197,7 +167,6 @@ def BigToLittleEndian(bigHex):
 
     littleHex = ''.join(littleBytesArray)
     
-    #print(littleHex)
     return littleHex
 
 def amountToSatoshis(amount):
@@ -216,8 +185,11 @@ def getHexCounterOfOutputs(counter):
     hexCounter = (2 * 1 - len(hexCounter)) * "0" + hexCounter
     return hexCounter
 
-# Return list of transactions that is part of the gridlock solution
 def gridlock():
+    """
+    Run the gridlock directly (not used in this script)
+    This script uses a contract-based gridlock. See next function 'ourContractGridlock'.
+    """
 
     global accounts
     print("\n-----Pre-gridlock Accounts State -----")
@@ -247,25 +219,32 @@ def gridlock():
     printActiveTxQueue()
     printInactiveTxQueue()
     printAccounts()
-    
     print("\n ----- ------------------ -----")
         
-# Call gridlock in contract
+
 def ourContractGridlock():
+    """ 
+    Run gridlock in the deployed contract
+    """
+
     output = ourContractCall("gridlock")
     if output:
-        print("Received output (gridlock contract) : {}".format(output))
-        print("[INFO] OurContract Gridlock ended.")
+        print(CODE.INFO, "Received output (gridlock contract) : {}".format(output))
         decodeContractGridlock(output)
-    else:
+
+    print(CODE.INFO,"OurContract Gridlock ended.")
 
     
-# Decode the contract gridlock output containing the remaining transactions in the gridlock solution
-# The gridlock returns the transactions in the below format:
-# id,senderAddress,receiverAddress,amount
+
 def decodeContractGridlock(solution):
-    txs = solution.split("\n")[:-1]
-    ids = [int(tx[0]) for tx in txs] # Retrieve id
+    """
+    Decode the contract gridlock output containing the remaining transactions in the gridlock solution
+    The contract returns the transactions in the below format:
+                    id,senderAddress,receiverAddress,amount
+    """
+
+    txs = solution.split("\n")[:-1] 
+    ids = [int(tx[0]) for tx in txs] 
     inactiveTxQueue.list = [tx for tx in activeTxQueue.list if tx.id not in ids]
     activeTxQueue.list = [tx for tx in activeTxQueue.list if tx.id in ids]
     
@@ -274,7 +253,13 @@ def decodeContractGridlock(solution):
         accounts[tx.senderId]["netBalance"] += tx.amount
         accounts[tx.receiverId]["netBalance"] -= tx.amount
 
+
 def removeLatestTx(id_):
+    """
+    Remove transaction by id from the active transaction queue and push into inactive transaction queue
+    Update the netBalance of the transaction's sender and receiver
+    Add the transaction's receiver into the account queue
+    """
     global accounts
     print("RemoveLatestTx call ...")
     if len(activeTxQueue.list) == 0:
@@ -314,33 +299,14 @@ def getNumberOfInputs():
         counter += len(tx.vins)
     return counter
 
-# Create new address for oracle to receive the fee deducted from his added locking UTXO.
 
-def createNewAddress():
-    print("Generating new address for Oracle ... ")
-    subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "getnewaddress" ],stdout=subprocess.PIPE)
-    subProcessString = subProcessCall.stdout
-    dsubProcessCall = subProcessString.decode('utf-8')
-    print(dsubProcessCall)
-    return dsubProcessCall
 
-def getFirstUTXO():
-    print("Generating new address for Oracle ... ")
-    subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "listunspent" ],stdout=subprocess.PIPE)
-    subProcessString = subProcessCall.stdout
-    dsubProcessCall = subProcessString.decode('utf-8')
-    
-    receiverInfoJson = json.loads(dsubProcessCall)
-    txAddress = receiverInfoJson[0]["address"]
-    txId = receiverInfoJson[0]["txid"]
-    amount = receiverInfoJson[0]["amount"]
-    print(" Getting first Oracle UTXO ...")
-    print(txAddress, txId, amount)
-    return txAddress, txId, amount
-
-# Build the transaction by concatenating hex data
-# See Bitcoin Byte-map on : https://en.bitcoin.it/wiki/File:TxBinaryMap.png
 def createTransactionFromSolution(startGridlockTime,fee=0):
+    """
+    Build the transaction by concatenating hex data (not used in this script)
+    See Bitcoin Byte-map on : https://en.bitcoin.it/wiki/File:TxBinaryMap.png
+
+    """
     global accounts
 
     if fee > 0:
@@ -410,20 +376,31 @@ def createTransactionFromSolution(startGridlockTime,fee=0):
         sys.exit(0)
 
 
-def sendTransaction(hexEncodedTx):
-    print("\n ----- Send Final transaction to the blockchain ...")
+def sendTransaction(hexEncodedTx): 
+    """
+    Send a hex-encoded transaction to the miners using bitcoin API call -sendrawtransaction
+    This script does not use this method. 
+    """
+
+    print(CODE.INFO,"Send Final transaction to the blockchain ...")
     subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "sendrawtransaction", hexEncodedTx  ],stdout=subprocess.PIPE)
     subProcessString = subProcessCall.stdout
     dsubProcessCall = subProcessString.decode('utf-8')
-    print("\n sendrawtransaction : {}".format(dsubProcessCall))
+    print(CODE.INFO,"sendrawtransaction : {}".format(dsubProcessCall))
 
-# Send transaction using Oracle wallet
 def sendTransactionFromOracle():
-    print("\n ----- Send Final transaction to the blockchain...")
+    """
+    Send a transaction to the miners using bitcoin API call -sendmany using the Oracle money.
+    The transaction's outputs in built from the gridlock solution :
+        - outputs'receivers are the receivers from the remaining transactions in the active queue
+        - outputs' amounts are the receivers bet balance
+    """
+
+    print(CODE.INFO,"Send Final transaction to the blockchain...")
     dummy = "\"\"".encode()
     cmd = "{"
     for id_ in accounts:
-        if accounts[id_]["addresses"] != [] and accounts[id_]["netBalance"] != 0:
+        if accounts[id_]["addresses"] != [] and accounts[id_]["netBalance"] > 0:
             #cmd += "\\\"{}\\\" : {},".format(str(accounts[id_]["addresses"][0]), str(accounts[id_]["netBalance"]))
             cmd +=   "\"" + str(accounts[id_]["addresses"][0])  +"\"" + ":" + str(accounts[id_]["netBalance"]) + ","
     cmd = cmd[:-1] # remove last comma
@@ -433,14 +410,8 @@ def sendTransactionFromOracle():
     subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "sendmany","", cmd  ],stdout=subprocess.PIPE)
     subProcessString = subProcessCall.stdout
     dsubProcessCall = subProcessString.decode('utf-8')
-    print("\n sendmany - txid : {}".format(dsubProcessCall))
+    print(CODE.INFO,"sendmany - txid : {}".format(dsubProcessCall))
 
-def sendTransaction(hexEncodedTx):
-    print("\n ----- Send Final transaction to the blockchain ...")
-    subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "sendrawtransaction", hexEncodedTx  ],stdout=subprocess.PIPE)
-    subProcessString = subProcessCall.stdout
-    dsubProcessCall = subProcessString.decode('utf-8')
-    print("\n sendrawtransaction : {}".format(dsubProcessCall))
 
 def generateNewBlock():
     
@@ -452,7 +423,7 @@ def generateNewBlock():
 # Update balance from sent UTXO
 def updateBalance():
     global accounts
-    print("Updating balance ...")
+    print(CODE.INFO,"Updating balance ...")
     for tx in activeTxQueue.list:
         accounts[tx.senderId]['balance'] = 0
         accounts[tx.senderId]['netBalance'] = 0
@@ -462,7 +433,7 @@ def updateBalance():
 # Update balance inactive tx moved back to active tx for the next round
 def updateBalanceBack():
     global accounts
-    print("Updating balance BACK ...")
+    print(CODE.INFO,"Updating balance BACK ...")
     for tx in activeTxQueue.list:
         accounts[tx.senderId]['netBalance'] -= tx.amount
         accounts[tx.receiverId]['netBalance']+= tx.amount
@@ -484,34 +455,29 @@ def saveGridlockTime(startGridlockTime):
 
 
 def threaded_generate_block(period):       
-
-        # Start block generation
         starttime = time.time()
         
         while True:
             time.sleep(period - ((time.time() - starttime) % period))
-            print("{} seconds passed ! Generating block ...".format(period))
+            print(CODE.INFO,"{} seconds passed ! Generating block ...".format(period))
             generateNewBlock()
 
-def threaded_gridlock(period, fee = 0):          
+def threaded_gridlock(period):          
 
-        # Start Gridlock
-        
         global solutionCounter
-
         starttime = time.time()
         
         while True:
             # Execute gridlock again after -period seconds
             time.sleep(period - ((time.time() - starttime) % period))
-            print(" {} seconds passed ! Gridlock starting ...".format(period))
+            print(CODE.INFO,"{} seconds passed ! Gridlock starting ...".format(period))
 
             startGridlockTime = datetime.now() # Used to remove the time where gridlock is sleeping ...
             ourContractGridlock() # Call gridlock in smart contract
             
             # Send TX from oracle
             if (len(activeTxQueue.list) == 0):
-                print(" \nNo solution found")
+                print(CODE.INFO,"No solution found")
             else:
                 sendTransactionFromOracle()
                 updateBalance()
@@ -522,7 +488,6 @@ def threaded_gridlock(period, fee = 0):
                 activeTxQueue.list = inactiveTxQueue.list[::-1] # Reverse list to keep the time order
                 updateBalanceBack()
                 inactiveTxQueue.list = [] # reset inactiveTx
-
 
             # To be implemented : Unlock ressources for client threads
 
@@ -759,15 +724,30 @@ def printGridlockParams():
     print(CODE.INFO, "Oracle server, host :", host, "port :",port)
     print(CODE.INFO, "Gridlock period :", gridLockPeriod )
     
+def setTestCase(case):
+    global txSenderIdOrder, txReceiverIdOrder
+    if case == "bilateral":
+        txSenderIdOrder = ["A", "B"]
+        txReceiverIdOrder = ["B","A"]
+    elif case == "ubin":
+        txSenderIdOrder = ["A", "B", "B", "C","C","D", "A","E","E","D"]
+        txReceiverIdOrder = ["B", "C", "C", "D", "E","E", "C", "A","B","A"]
+    elif case == "random":
+        pass
+    else:
+        print(CODE.ERROR, "The set case is not available.")
+        sys.exit(0)
+
+    print(CODE.INFO, "Test case set to : {}".format(case))
+
 
 def readCommand():
 	# construct the argument parse and parse the arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", "--fulltest",action='store_true', help="Set the flag to perform a full speed test")
-    parser.add_argument("-t", "--test",action='store_true', help="Set the flag to perform a speed test")
-    parser.add_argument("-e", "--endtest",action='store_true', help="Set the flag to perform an  end to end speed test")
+    parser.add_argument("-c", "--case",default="bilateral", help="Set the test case to perform a speed test (bilateral|ubin|random)")
+    parser.add_argument("-r", "--rootDir", help="Set the root directory for the bitcoin folders")
+    parser.add_argument("-t", "--test",action="store_true", help="Enable the speed test")
     parser.add_argument("-n", "--txNumber", type=int, help="Set the tx number")
-    parser.add_argument("-s", "--settxfee",type=float, help="Set the tx fee")
     parser.add_argument("-d", "--debug",action='store_true', help="Set debug flag") # TODO
     args = vars(parser.parse_args())
     return args
@@ -806,32 +786,30 @@ accounts = initAccounts()
 txCounter = 0 # tansaction counter used with -txSenderIdOrder, -txReceiverIdORder variables to retrieve the tx sender/receiver
 solutionCounter = 1
 
-# Transactions sender and receiver order
-
-#txSenderIdOrder = ["A", "B", "B", "C","C","D", "A","E","E","D"]
-#txReceiverIdOrder = ["B", "C", "C", "D", "E","E", "C", "A","B","A"]
-
-# Speed test case (2 transactions)
-txSenderIdOrder = ["A", "B"]
-txReceiverIdOrder = ["B","A"]
+# Transactions' senders and receivers order
+txSenderIdOrder = []
+txReceiverIdOrder = []
 
 
 
 if __name__=="__main__":
 
     args = readCommand()
+    setTestCase(args["case"])
+    if args["rootDir"]:
+        rootDir = args["rootDir"]
+
     printGridlockParams()
 
-    # TEST GRIDLOCK SPEED
-
     # full test for 5 users
-    if args["fulltest"]:
+    
+    if args["test"]:
         import random
         txNumbers = [10,100,1000,5000,10000]
         timeAverage = [0,0,0,0,0]
         txAverage = [0,0,0,0,0]
         roundNumber = 1
-
+        """
         for i in range(roundNumber):
             for index,txNumber in enumerate(txNumbers):
 
@@ -853,51 +831,13 @@ if __name__=="__main__":
             writer.writerow(["Number of transactions","Gridlock time", "Settled transactions (sec)"] )
             for i in range(len(txNumbers)):
                 writer.writerow([txNumbers[i],timeAverage[i], txAverage[i]] )
-
-    # manual testing
-    elif args["test"]:
-        import random
-
-
-        print("\n ----- GRIDLOCK SPEED TEST -----")
-        # init account State
-        accounts = initAccounts("ubin")
-        # init active transaction queue
-
-
-        if( args["txNumber"]):
-            #python3 oracleServer.py -t -n 100
-            initTx(case="random", txNumber=int(args["txNumber"]))
-        else:
-            #python3 oracleServer.py -t 
-            initTx("ubin")
-
-        # print state
-        printActiveTxQueue()
-        printAccounts()
-
-        # start gridlock
-        time = timeit.timeit(gridlock, number=1)
-        print("Gridlock execution time : {} s".format(time))
-                
+        """
+       
     # REAL ORACLE SERVER
     else:
         try:
             
             ServerSocket.bind((host, port))
-
-            # End to end test
-            if args["endtest"]:
-                # Initialize csv file with column names
-                """
-                with open('solving_speed.csv', 'w') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["transaction ID","Solved time (ms)"] )
-                
-                """
-
-                # speed thread
-                start_new_thread(threaded_speed,(5,))
 
         except socket.error as e:
             print(str(e))
@@ -910,11 +850,10 @@ if __name__=="__main__":
         compileContract()
         # Deploy LSM contract
         ourContractCall("init")
-
         # Start generate blocks thread
         start_new_thread(threaded_generate_block, (blockPeriod,))
         # Start gridlock thread
-        start_new_thread(threaded_gridlock,(gridLockPeriod,args["settxfee"],))
+        start_new_thread(threaded_gridlock,(gridLockPeriod,))
 
         
         # Listen for connections
