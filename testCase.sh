@@ -16,9 +16,9 @@ showTime() {
  
 
 
-if [ -z $1 ] || [ $1 == "bilateral"]
+if [ -z $1 ] || [ $1 == "bilateral" ]
 then 
-        # Simple Case : two users test case. A initial balance 100. B initial balance : 50
+        # Simple Case (default) : two users test case. A initial balance 100. B initial balance : 50
         # A sends 150 to B. 
         # B sends 100 to A.
 
@@ -44,7 +44,7 @@ then
 
         # Send LSM transaction to Oracle
 
-        echo "\n[INFO] send transactions to Oracle"
+        echo "[INFO] send transactions to Oracle"
 
         echo "[INFO] A sends 150 to B"
         bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf sendtoaddressLSM $addressB 150
@@ -95,7 +95,7 @@ then
 
         # Send LSM transaction to Oracle
 
-        echo "\n[INFO] send transactions to Oracle"
+        echo "[INFO] send transactions to Oracle"
 
         echo "[INFO] A sends 5 to B"
         bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf sendtoaddressLSM $addressB 5

@@ -270,7 +270,7 @@ void printAccounts()
 
 void printAccount(Account account){
     
-    err_printf("Address : %s, balance : %d, netBalance : %d \n", account.address, account.balance, account.netBalance);
+    err_printf("[CONTRACT] Address : %s, balance : %d, netBalance : %d \n", account.address, account.balance, account.netBalance);
 }
 
 static Account* findAccount(char *address)
@@ -365,7 +365,7 @@ int createOffsetTx(char *senderAddress, char *receiverAddress, int amount)
 // Display a transaction information : id, senderAddress, receiverAddress, amount
 void printOffsetTx(OffsetTx tx)
 {
-    err_printf("tx  : %d, sender : %s, receiver :  %s, amount %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    err_printf("[CONTRACT] tx  : %d, sender : %s, receiver :  %s, amount %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
     
 }
 
@@ -373,7 +373,7 @@ void printOffsetTx(OffsetTx tx)
 // And use STDOUT to retrieve by calling the contract in another process (oracleContract.py)
 void printReturnOffsetTx(OffsetTx tx)
 {
-    err_printf("tx  : %d, sender : %s, receiver :  %s, amount %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
+    err_printf("[CONTRACT] tx  : %d, sender : %s, receiver :  %s, amount %d \n", tx.id, tx.senderAddress, tx.receiverAddress, tx.amount);
     
     // output the solution in stdout (will be captured by main python script oracleContract.py)
     // NB : err_printf seems to flush STDOUT right away 
@@ -397,7 +397,7 @@ static void initQueue(unsigned capacity){
 
 void resetQueue(Queue *queue, unsigned  capacity)
 {
-    err_printf("[CONTRACT] INACTIVE QUEUE RESET \n");
+    err_printf("[CONTRACT] QUEUE RESET \n");
     queue->size = 0;
     queue->front = 0;
     queue->rear = capacity - 1;
@@ -538,6 +538,7 @@ void toActiveQueue()
     }
     
     // Reset inactive queue
+    err_printf("[CONTRACT] INACTIVE RESET QUEUE\n", tx.receiverAddress);
     resetQueue(inactiveQueue, MAX_QUEUE_CAPACITY);
     
 
@@ -652,7 +653,7 @@ void printAccountQ(){
 void startGridLock()
 {   
     char *currentAddress;
-    err_printf("[CONTRACT] Gridlock starting ... ------------------------------- \n");
+    err_printf("[CONTRACT] Gridlock starting ... -------------------------------------- \n");
     while( accountQueue->size > 0)
     {
         currentAddress = dequeueAccountQ();
@@ -669,6 +670,7 @@ void startGridLock()
     // Update balance
     if (!isEmpty(activeQueue))
     {
+        err_printf("\n[CONTRACT] SOLUTION FOUND\n");
         err_printf("[CONTRACT] ACTIVE QUEUE\n");
         printReturnQueue(activeQueue);
         err_printf("[CONTRACT] INACTIVE QUEUE\n"); 
@@ -678,11 +680,10 @@ void startGridLock()
                 
     }
     else
-        err_printf("[CONTRACT] NO SOLUTION FOUND\n");
+        err_printf("\n[CONTRACT] NO SOLUTION FOUND\n");
     
     
-    err_printf("[CONTRACT] Gridlock has ended ... -------------------------------\n");
-    printAccounts();
+    err_printf("[CONTRACT] GRIDLOCK HAS ENDED --------------------------------------\n");
     if (inactiveQueue->size > 0)
     {
         toActiveQueue();
@@ -690,10 +691,12 @@ void startGridLock()
     }
 }
 
+
 // Reset balance and net balance from remaining accounts in the solution
 void updateBalance()
 {
-    err_printf("[CONTRACT] SOLUTION FOUND. UPDATING THE BALANCE ...\n");
+    printAccounts();
+    err_printf("[CONTRACT] UPDATING THE BALANCE (reset active queue and send the final tx) ...\n");
 
    Account *activeAccount;
    for (int i = activeQueue->front ; i < activeQueue->rear + 1 ; i++)

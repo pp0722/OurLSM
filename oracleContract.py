@@ -13,26 +13,10 @@ import sys
 from datetime import datetime
 from speedTestCase import *
 
-# Default Queue structucture for Transaction Queue, Account Queue
-class Queue:
-    "A container with a first-in-first-out (FIFO) queuing policy."
-    def __init__(self):
-        self.list = []
-
-    def push(self,item):
-        "Enqueue the 'item' into the queue"
-        self.list.insert(0,item)
-
-    def pop(self):
-        """
-          Dequeue the earliest enqueued item still in the queue. This
-          operation removes the item from the queue.
-        """
-        return self.list.pop()
-
-    def isEmpty(self):
-        "Returns true if the queue is empty"
-        return len(self.list) == 0
+# Import Queue (for transactions and accounts)
+# Import CODE
+# Import debug
+from utils import * 
 
 class Transaction:
     id = 1
@@ -52,10 +36,6 @@ class Transaction:
     def printInfo(self):
         print("TX {}, {}, {}, {} ".format(self.id, self.senderId, self.receiverId, self.amount))
        # print("vins : {}")
-
-class CODE:
-    INFO = "[INFO]"
-    ERROR = "[ERROR]"
 
 
 
@@ -134,9 +114,11 @@ def printInactiveTxQueue():
         tx.printInfo()
 
 
-# Method returning the owner of the transaction.
-# For the moment, we assume the Oracle knows the transaction order and each user will be identified with the following ID : "A", "B", "C", "D", "E"
 def getOwnerId():
+    """
+    Method returning the owner of the transaction.
+    For the moment, we assume the Oracle knows the transaction order and each user will be identified with the following ID : "A", "B", "C", "D", "E"
+    """
     global txCounter
 
     if txCounter == len(txSenderIdOrder): 
@@ -144,9 +126,12 @@ def getOwnerId():
 
     return txSenderIdOrder[txCounter], txReceiverIdOrder[txCounter]
 
-# Method returning the hexEncoded vins which will concatenated in the gridlock solution
-# Return the original hex encoded tx sent by the user without the txout part by using the txout version(or number of txout ? "01") and the output value
 def getHexVins(hexEncodedTx, outValue):
+    """
+    Return the hexEncoded vins which will concatenated in the gridlock solution
+    Return the original hex encoded tx sent by the user without the txout part by using the txout version(or number of txout ? "01") and the output value
+
+    """
     outValueFormatted = amountToSatoshis(outValue)
     separator = "01" + amountToHex(outValueFormatted) # separator is formed with the number of txout (01 generally) and output value 
     vInsHex = hexEncodedTx.split(separator)[0]    # Remove outputs
@@ -154,8 +139,10 @@ def getHexVins(hexEncodedTx, outValue):
     
     return vInsHex[2 * (1+39):] # Remove tx version (1byte) and inputs counter (39 bytes)
 
-# Return transaction sent amount in Little Endian hex format.
 def amountToHex(amount):
+    """
+    Return transaction sent amount in Little Endian hex format.
+    """
     amountHex = hex(amount)[2:].zfill(2*8)
     return BigToLittleEndian(amountHex)
 
@@ -228,26 +215,34 @@ def ourContractGridlock():
     """
 
     output = ourContractCall("gridlock")
-    if output:
-        print(CODE.INFO, "Received output (gridlock contract) : {}".format(output))
-        decodeContractGridlock(output)
-
+    decodeContractGridlock(output)
     print(CODE.INFO,"OurContract Gridlock ended.")
 
     
 
-def decodeContractGridlock(solution):
+def decodeContractGridlock(solution = None):
     """
     Decode the contract gridlock output containing the remaining transactions in the gridlock solution
     The contract returns the transactions in the below format:
                     id,senderAddress,receiverAddress,amount
     """
 
-    txs = solution.split("\n")[:-1] 
-    ids = [int(tx[0]) for tx in txs] 
-    inactiveTxQueue.list = [tx for tx in activeTxQueue.list if tx.id not in ids]
-    activeTxQueue.list = [tx for tx in activeTxQueue.list if tx.id in ids]
+    if solution:
+        print(CODE.INFO, "Received output (gridlock contract solution set) : {}".format(solution))
+        txs = solution.split("\n")[:-1]
+        ids = []
+        for tx in txs:
+            ids.append(int(tx.split(",")[0]))
+
+
+        inactiveTxQueue.list = [tx for tx in activeTxQueue.list if tx.id not in ids]
+        activeTxQueue.list = [tx for tx in activeTxQueue.list if tx.id in ids]
     
+    else:
+        print(CODE.INFO, "Received output (gridlock contract solution set) : NONE")
+        inactiveTxQueue.list = activeTxQueue.list
+        activeTxQueue.list = []
+        
     # Update balance from the solution given by the contract
     for tx in inactiveTxQueue.list:
         accounts[tx.senderId]["netBalance"] += tx.amount
@@ -413,6 +408,7 @@ def sendTransactionFromOracle():
     print(CODE.INFO,"sendmany - txid : {}".format(dsubProcessCall))
 
 
+
 def generateNewBlock():
     
     subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "generate", "1" ],stdout=subprocess.PIPE)
@@ -470,12 +466,13 @@ def threaded_gridlock(period):
         while True:
             # Execute gridlock again after -period seconds
             time.sleep(period - ((time.time() - starttime) % period))
-            print(CODE.INFO,"{} seconds passed ! Gridlock starting ...".format(period))
+            print("\n\n",CODE.INFO,"{} seconds passed ! Gridlock {} starting ...".format(period, solutionCounter))
 
             startGridlockTime = datetime.now() # Used to remove the time where gridlock is sleeping ...
-            ourContractGridlock() # Call gridlock in smart contract
             
-            # Send TX from oracle
+            ourContractGridlock() # Call gridlock in smart contract
+            solutionCounter += 1
+
             if (len(activeTxQueue.list) == 0):
                 print(CODE.INFO,"No solution found")
             else:
@@ -543,23 +540,22 @@ def threaded_client(connection):
         # Parse (call bitcoin-cli API gettransaction )
         if (len(data) != 128 and len(data) != 24 and len(data) != 104): # TEST : len 128 -> bitcoin hello
             createdAt = datetime.now()
-            print("----- NEW TRANSACTION HAS BEEN DETECTED ----- {}\n".format(createdAt))
-            #print("Length bytes : {}".format(len(data)))
+            debug("----- NEW TRANSACTION HAS BEEN DETECTED ----- {}\n".format(createdAt))
             hexEncodedTx = data.decode('utf-8')
-            print("----- Hex Encoded TX -----")
-            print(hexEncodedTx)
+            debug("----- Hex Encoded TX -----")
+            debug(hexEncodedTx)
             # Decode raw transaction
             dsubProcessCall = sendBitcoinCall(dataDirOracle, confFileOracle, "decoderawtransaction", args=[hexEncodedTx])
 
-            print("\n-----Decoded Hex TX -----")
+            debug("\n-----Decoded Hex TX -----")
             jsonTx = json.loads(dsubProcessCall)
-            print(json.dumps(jsonTx))
+            debug(json.dumps(jsonTx))
 
             
 
             # Get sender and receiver ID  - TEMPORARY TODO
             senderId, receiverId = getOwnerId()
-            print("\n Sender ID  : {} , Receiver ID : {}".format(senderId,receiverId))
+            debug("\n Sender ID  : {} , Receiver ID : {}".format(senderId,receiverId))
             txCounter = txCounter + 1
 
 
@@ -584,7 +580,7 @@ def threaded_client(connection):
 
             # Get the amount sent to the recipient
             outValue = jsonTx["vout"][0]["value"]
-            print("\n Outputs: {}".format(outValue)) 
+            debug("\n Outputs: {}".format(outValue)) 
 
 
             # Retrieve the receiver address
@@ -595,7 +591,6 @@ def threaded_client(connection):
 
             # Get concatenated hexVins
             hexVins = getHexVins(hexEncodedTx, outValue)
-            #print("\n hexVins extraction : {}".format(hexVins))
             
             # CONTRACT CALL : transfer money
             ourContractCall("transfer", args=[senderId, receiverId, outValue])
@@ -623,7 +618,7 @@ def threaded_client(connection):
 
         
 
-    print('Client left ! ')
+    print(CODE.INFO,'Client left ! ')
     connection.close()
     #ThreadCount -= 1
 
@@ -632,9 +627,9 @@ def threaded_client(connection):
 def getSumOfInputs(inputs):
     
     amount = 0
-    print(" \n ----- Inputs decoding (Get Sum of Inputs) -----")
+    print("---- Inputs decoding (Get amount of inputs) -----")
     if inputs is None:
-        print(" No inputs ...")
+        print(CODE.INFO,"No inputs ...")
         return amount
     else:
         for inp in inputs:
@@ -653,8 +648,6 @@ def getSumOfInputs(inputs):
             
             
 
-            # decoderawtransaction from hex encoded tx
-            #print("decoderawtransaction {}".format(dsubProcessCall))
             subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "decoderawtransaction", dsubProcessCall ],stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             subProcessString = subProcessCall.stdout
             dsubProcessCall = subProcessString.decode('utf-8') # decoded output
@@ -667,15 +660,13 @@ def getSumOfInputs(inputs):
 
             
 
-            #print("Decoded Hex TX")
             jsonTx = json.loads(dsubProcessCall)
-            #print(json.dumps(jsonTx))
 
             voutIndex = inp['vout']
             amount += jsonTx['vout'][voutIndex]['value']
 
 
-        print("\n Inputs total Amount : {}".format(amount))
+        print(CODE.INFO,"Inputs total Amount : {}".format(amount))
         return amount
 
 
@@ -698,11 +689,11 @@ def sendBitcoinCall(datadir, conf, method, args = None):
 def ourContractCall( method, args = None):
     if args is None:
         cmd = ["ourcontract-rt","contracts", "lsm", method]
-        print("[INFO] ", cmd)
+        print(CODE.INFO,"Call", cmd)
         subProcessCall = subprocess.run( cmd,stdout=subprocess.PIPE)
     else:
         cmd = ["ourcontract-rt","contracts", "lsm", method ]
-        print("[INFO] ", cmd)
+        print(CODE.INFO,"Call", cmd)
         for arg in args:
             cmd.append(str(arg))
         subProcessCall = subprocess.run(cmd,stdout=subprocess.PIPE)
@@ -748,7 +739,7 @@ def readCommand():
     parser.add_argument("-r", "--rootDir", help="Set the root directory for the bitcoin folders")
     parser.add_argument("-t", "--test",action="store_true", help="Enable the speed test")
     parser.add_argument("-n", "--txNumber", type=int, help="Set the tx number")
-    parser.add_argument("-d", "--debug",action='store_true', help="Set debug flag") # TODO
+    parser.add_argument("-d", "--debug",action='store_true', help="Set debug flag") 
     args = vars(parser.parse_args())
     return args
 
@@ -798,6 +789,8 @@ if __name__=="__main__":
     setTestCase(args["case"])
     if args["rootDir"]:
         rootDir = args["rootDir"]
+    if args["debug"]:
+        DEBUG = True
 
     printGridlockParams()
 
