@@ -28,30 +28,27 @@ then
         echo "[INFO] init users' wallet balance ..."
 
         echo "[INFO] generate new address for wallet A"
-        addressA=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf getnewaddress)
-        echo "[INFO]Oracle send ${balanceArr[0]} to wallet A"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressA ${balanceArr[0]}
+        addressA=$(bitcoin-cli -datadir=./test/lsm/A/ getnewaddress)
+        echo "[INFO] Oracle send ${balanceArr[0]} to wallet A"
+        bitcoin-cli -datadir=./test/lsm/O/ sendtoaddress $addressA ${balanceArr[0]}
 
         echo "[INFO] generate new address for wallet B"
-        addressB=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoinB/ -conf=/home/david/.bitcoinB/bitcoin.conf getnewaddress)
+        addressB=$(bitcoin-cli -datadir=./test/lsm/B/ getnewaddress)
         echo "[INFO] Oracle send ${balanceArr[1]} to wallet B"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressB ${balanceArr[1]}
-
+        bitcoin-cli -datadir=./test/lsm/O/ sendtoaddress $addressB ${balanceArr[1]}
 
         echo "[INFO] generate new block to update the balance"
         sleep 1
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf generate 1
-
-        # Send LSM transaction to Oracle
+        bitcoin-cli -datadir=./test/lsm/O/ generate 1
 
         echo "[INFO] send transactions to Oracle"
 
         echo "[INFO] A sends 150 to B"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf sendtoaddressLSM $addressB 150
+        bitcoin-cli -datadir=./test/lsm/A/ sendtoaddressLSM $addressB 150
 
         sleep 0.5
         echo "[INFO] B sends 100 to A"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinB/ -conf=/home/david/.bitcoinB/bitcoin.conf sendtoaddressLSM $addressA 100
+        bitcoin-cli -datadir=./test/lsm/B/ sendtoaddressLSM $addressA 100
 
 elif [ $1 == "ubin" ]
 then 
@@ -64,77 +61,77 @@ then
         echo "[INFO] init users' wallet balance ..."
 
         echo "[INFO] generate new address for wallet A"
-        addressA=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf getnewaddress)
+        addressA=$(bitcoin-cli -datadir=./test/lsm/A/ -conf=./test/lsm/A/bitcoin.conf getnewaddress)
         echo "[INFO]Oracle send ${balanceArr[0]} to wallet A"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressA ${balanceArr[0]}
+        bitcoin-cli -datadir=./test/lsm/O/ -conf=./test/lsm/O/bitcoin.conf sendtoaddress $addressA ${balanceArr[0]}
 
         echo "[INFO] generate new address for wallet B"
-        addressB=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoinB/ -conf=/home/david/.bitcoinB/bitcoin.conf getnewaddress)
+        addressB=$(bitcoin-cli -datadir=./test/lsm/B/ -conf=./test/lsm/B/bitcoin.conf getnewaddress)
         echo "[INFO] Oracle send ${balanceArr[1]} to wallet B"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressB ${balanceArr[1]}
+        bitcoin-cli -datadir=./test/lsm/O/ -conf=./test/lsm/O/bitcoin.conf sendtoaddress $addressB ${balanceArr[1]}
 
         echo "[INFO] generate new address for wallet C"
-        addressC=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoinC/ -conf=/home/david/.bitcoinC/bitcoin.conf getnewaddress)
+        addressC=$(bitcoin-cli -datadir=./test/lsm/C/ -conf=./test/lsm/C/bitcoin.conf getnewaddress)
         echo "[INFO] Oracle send ${balanceArr[2]} to wallet C"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressC ${balanceArr[2]}
+        bitcoin-cli -datadir=./test/lsm/O/ -conf=./test/lsm/O/bitcoin.conf sendtoaddress $addressC ${balanceArr[2]}
 
         echo "[INFO] generate new address for wallet D"
-        addressD=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoinD/ -conf=/home/david/.bitcoinD/bitcoin.conf getnewaddress)
+        addressD=$(bitcoin-cli -datadir=./test/lsm/D/ -conf=./test/lsm/D/bitcoin.conf getnewaddress)
         echo "[INFO] Oracle send ${balanceArr[3]} to wallet D"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressD ${balanceArr[3]}
+        bitcoin-cli -datadir=./test/lsm/O/ -conf=./test/lsm/O/bitcoin.conf sendtoaddress $addressD ${balanceArr[3]}
 
 
         echo "[INFO] generate new address for wallet E"
-        addressE=$(bitcoin-cli -regtest -datadir=/home/david/.bitcoinE/ -conf=/home/david/.bitcoinE/bitcoin.conf getnewaddress)
+        addressE=$(bitcoin-cli -datadir=./test/lsm/E/ -conf=./test/lsm/E/bitcoin.conf getnewaddress)
         echo "[INFO] Oracle send ${balanceArr[4]} to wallet E"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf sendtoaddress $addressE ${balanceArr[4]}
+        bitcoin-cli -datadir=./test/lsm/O/ -conf=./test/lsm/O/bitcoin.conf sendtoaddress $addressE ${balanceArr[4]}
 
         echo "[INFO] generate new block to update the balance"
         sleep 1
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf generate 1
+        bitcoin-cli -datadir=./test/lsm/O/ -conf=./test/lsm/O/bitcoin.conf generate 1
 
         # Send LSM transaction to Oracle
 
         echo "[INFO] send transactions to Oracle"
 
         echo "[INFO] A sends 5 to B"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf sendtoaddressLSM $addressB 5
+        bitcoin-cli -datadir=./test/lsm/A/ -conf=./test/lsm/A/bitcoin.conf sendtoaddressLSM $addressB 5
 
         sleep 0.2
         echo "[INFO] B sends 6 to C"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinB/ -conf=/home/david/.bitcoinB/bitcoin.conf sendtoaddressLSM $addressC 6
+        bitcoin-cli -datadir=./test/lsm/B/ -conf=./test/lsm/B/bitcoin.conf sendtoaddressLSM $addressC 6
 
         sleep 0.2
         echo "[INFO] B sends 30 to C"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinB/ -conf=/home/david/.bitcoinB/bitcoin.conf sendtoaddressLSM $addressC 30
+        bitcoin-cli -datadir=./test/lsm/B/ -conf=./test/lsm/B/bitcoin.conf sendtoaddressLSM $addressC 30
 
         sleep 0.2
         echo "[INFO] C sends 8 to D"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinC/ -conf=/home/david/.bitcoinC/bitcoin.conf sendtoaddressLSM $addressD 8
+        bitcoin-cli -datadir=./test/lsm/C/ -conf=./test/lsm/C/bitcoin.conf sendtoaddressLSM $addressD 8
 
         sleep 0.2
         echo "[INFO] C sends 80 to E"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinC/ -conf=/home/david/.bitcoinC/bitcoin.conf sendtoaddressLSM $addressE 80
+        bitcoin-cli -datadir=./test/lsm/C/ -conf=./test/lsm/C/bitcoin.conf sendtoaddressLSM $addressE 80
 
         sleep 0.2
         echo "[INFO] D sends 7 to E"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinD/ -conf=/home/david/.bitcoinD/bitcoin.conf sendtoaddressLSM $addressE 7
+        bitcoin-cli -datadir=./test/lsm/D/ -conf=./test/lsm/D/bitcoin.conf sendtoaddressLSM $addressE 7
 
         sleep 0.2
         echo "[INFO] A sends 6 to C"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoin/ -conf=/home/david/.bitcoin/bitcoin.conf sendtoaddressLSM $addressC 6
+        bitcoin-cli -datadir=./test/lsm/A/ -conf=./test/lsm/A/bitcoin.conf sendtoaddressLSM $addressC 6
 
         sleep 0.2
         echo "[INFO] E sends 8 to A"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinE/ -conf=/home/david/.bitcoinE/bitcoin.conf sendtoaddressLSM $addressA 8
+        bitcoin-cli -datadir=./test/lsm/E/ -conf=./test/lsm/E/bitcoin.conf sendtoaddressLSM $addressA 8
 
         sleep 0.2
         echo "[INFO] E sends 100 to B"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinE/ -conf=/home/david/.bitcoinE/bitcoin.conf sendtoaddressLSM $addressB 100
+        bitcoin-cli -datadir=./test/lsm/E/ -conf=./test/lsm/E/bitcoin.conf sendtoaddressLSM $addressB 100
 
         sleep 0.2
         echo "[INFO] D sends 5 to A"
-        bitcoin-cli -regtest -datadir=/home/david/.bitcoinD/ -conf=/home/david/.bitcoinD/bitcoin.conf sendtoaddressLSM $addressA 5
+        bitcoin-cli -datadir=./test/lsm/D/ -conf=./test/lsm/D/bitcoin.conf sendtoaddressLSM $addressA 5
 
 elif [ $1 == "random" ]
 then 

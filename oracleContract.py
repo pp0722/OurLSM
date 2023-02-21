@@ -340,7 +340,7 @@ def createTransactionFromSolution(startGridlockTime,fee=0):
 
         # pubScriptKey size / length in bytes (Variable Integer - default : 1 byte = 0x19 -> 25 bytes )
             receiverAddress = accounts[receiverId]["addresses"][0]
-            subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "validateaddress", receiverAddress  ],stdout=subprocess.PIPE)
+            subProcessCall = subprocess.run(["bitcoin-cli", "-datadir=./test/lsm/O/", "validateaddress", receiverAddress  ],stdout=subprocess.PIPE)
             subProcessString = subProcessCall.stdout
             dsubProcessCall = subProcessString.decode('utf-8')
 
@@ -378,7 +378,7 @@ def sendTransaction(hexEncodedTx):
     """
 
     print(CODE.INFO,"Send Final transaction to the blockchain ...")
-    subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "sendrawtransaction", hexEncodedTx  ],stdout=subprocess.PIPE)
+    subProcessCall = subprocess.run(["bitcoin-cli", "-datadir=./test/lsm/O/", "sendrawtransaction", hexEncodedTx  ],stdout=subprocess.PIPE)
     subProcessString = subProcessCall.stdout
     dsubProcessCall = subProcessString.decode('utf-8')
     print(CODE.INFO,"sendrawtransaction : {}".format(dsubProcessCall))
@@ -402,7 +402,7 @@ def sendTransactionFromOracle():
     cmd += "}"
     
     cmd = cmd.encode()
-    subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "sendmany","", cmd  ],stdout=subprocess.PIPE)
+    subProcessCall = subprocess.run(["bitcoin-cli", "-datadir=./test/lsm/O/", "sendmany","", cmd  ],stdout=subprocess.PIPE)
     subProcessString = subProcessCall.stdout
     dsubProcessCall = subProcessString.decode('utf-8')
     print(CODE.INFO,"sendmany - txid : {}".format(dsubProcessCall))
@@ -411,7 +411,7 @@ def sendTransactionFromOracle():
 
 def generateNewBlock():
     
-    subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "generate", "1" ],stdout=subprocess.PIPE)
+    subProcessCall = subprocess.run(["bitcoin-cli", "-datadir=./test/lsm/O/", "generate", "1" ],stdout=subprocess.PIPE)
     subProcessString = subProcessCall.stdout
     dsubProcessCall = subProcessString.decode('utf-8')
     print("{}".format(dsubProcessCall))
@@ -636,7 +636,7 @@ def getSumOfInputs(inputs):
 
             # getrawtransaction from txid
             #print("getrawtransaction {}".format(inp['txid']))
-            subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "getrawtransaction", inp['txid'] ],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            subProcessCall = subprocess.run(["bitcoin-cli", "-datadir=./test/lsm/O/", "getrawtransaction", inp['txid'] ],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             subProcessString = subProcessCall.stdout
             dsubProcessCall = subProcessString.decode('utf-8')[:-1] # decoded output, remove the last empty character
 
@@ -648,7 +648,7 @@ def getSumOfInputs(inputs):
             
             
 
-            subProcessCall = subprocess.run(["bitcoin-cli","-regtest", "-datadir=/home/david/.bitcoinOracle/", "-conf=/home/david/.bitcoinOracle/bitcoin.conf", "decoderawtransaction", dsubProcessCall ],stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subProcessCall = subprocess.run(["bitcoin-cli", "-datadir=./test/lsm/O/", "decoderawtransaction", dsubProcessCall ],stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             subProcessString = subProcessCall.stdout
             dsubProcessCall = subProcessString.decode('utf-8') # decoded output
 
@@ -747,9 +747,9 @@ def readCommand():
 
 
 # Bitcoin API calls configuration
-rootDir = "/home/david/"
-confFileOracle = "-conf=" + rootDir + ".bitcoinOracle" + "/bitcoin.conf"
-dataDirOracle = "-datadir=" + rootDir + ".bitcoinOracle"
+rootDir = "./test/lsm/"
+confFileOracle = "-conf=" + rootDir + "O" + "/bitcoin.conf"
+dataDirOracle = "-datadir=" + rootDir + "O"
 
 
 
