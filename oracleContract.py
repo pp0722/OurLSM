@@ -545,7 +545,7 @@ def threaded_client(connection):
             debug("----- Hex Encoded TX -----")
             debug(hexEncodedTx)
             # Decode raw transaction
-            dsubProcessCall = sendBitcoinCall(dataDirOracle, confFileOracle, "decoderawtransaction", args=[hexEncodedTx])
+            dsubProcessCall = sendBitcoinCall(dataDirOracle, "decoderawtransaction", args=[hexEncodedTx])
 
             debug("\n-----Decoded Hex TX -----")
             jsonTx = json.loads(dsubProcessCall)
@@ -748,7 +748,6 @@ def readCommand():
 
 # Bitcoin API calls configuration
 rootDir = "./test/lsm/"
-confFileOracle = "-conf=" + rootDir + "O" + "/bitcoin.conf"
 dataDirOracle = "-datadir=" + rootDir + "O"
 
 

@@ -21,7 +21,7 @@ bitcoind -datadir=./test/lsm/O/
 #bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf addnode "127.0.0.1:8327" "add"
 #bitcoin-cli -regtest -datadir=/home/david/.bitcoinOracle/ -conf=/home/david/.bitcoinOracle/bitcoin.conf addnode "127.0.0.1:8325" "add"
 
-sleep 1.5
+sleep 3
 
 # Oracle generate initial blocks to initialize users balance afterwards
 bitcoin-cli -datadir=./test/lsm/O/ generate 110
